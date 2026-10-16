@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""Resolve kstack roles to agent commands. Stdlib only, Python 3.8+.
+
+  kstack-models show
+  kstack-models validate [--check]
+  kstack-models cmd ROLE [--index N] [--herdr NAME --pane ID]
+"""
+import argparse
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ROLES = ("planner", "plan_critic", "workers", "reviewer",
+         "security_reviewer", "integration_reviewer", "fixer")
+CLIS = ("pi", "codex")
+PI_EFFORTS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
+
+
+def config_path():
+    if os.environ.get("KSTACK_CONFIG"):
+        return Path(os.environ["KSTACK_CONFIG"]).expanduser()
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "kstack" / "config.json"
+
+
+def load():
+    path = config_path()
+    try:
+        return json.loads(path.read_text())
+    except FileNotFoundError:
+        sys.exit("kstack: no config at %s. Run kstack-setup." % path)
+    except json.JSONDecodeError as e:
+        sys.exit("kstack: invalid JSON in %s: %s" % (path, e))
+
+
+def preset_names(cfg, role):
+    value = (cfg.get("roles") or {}).get(role)
+    return value if isinstance(value, list) else ([value] if value else [])
+
+
+def argv(preset):
+    if preset["cli"] == "pi":
+        args = ["pi", "--model", "%s:%s" % (preset["model"], preset["effort"])]
+    else:
+        args = ["codex", "-m", preset["model"],
+                "-c", "model_reasoning_effort=%s" % preset["effort"]]
+    return args + list(preset.get("args", []))
+
+
+def problems(cfg):
+    out, models = [], cfg.get("models") or {}
+    for name, p in models.items():
+        if p.get("cli") not in CLIS:
+            out.append("model %s: cli must be one of %s" % (name, ", ".join(CLIS)))
+        for key in ("model", "effort"):
+            if not isinstance(p.get(key), str) or not p.get(key):
+                out.append("model %s: missing %s" % (name, key))
+        if not isinstance(p.get("args", []), list):
+            out.append("model %s: args must be a list" % name)
+    for role in ROLES:
+        names = preset_names(cfg, role)
+        if not names:
+            out.append("role %s: not set" % role)
+        out += ["role %s: unknown model '%s'" % (role, n) for n in names if n not in models]
+    for key in ("max_workers", "max_fails"):
+        value = (cfg.get("execution") or {}).get(key)
+        if not isinstance(value, int) or value < 1:
+            out.append("execution.%s: must be a positive integer" % key)
+    finish = cfg.get("finish") or {}
+    if finish.get("target", "pr-green") not in ("pr-green", "merged", "deployed"):
+        out.append("finish.target: must be pr-green, merged, or deployed")
+    return out
+
+
+def warnings(cfg):
+    models, out = cfg.get("models") or {}, []
+
+    def ids(role):
+        return {models[n]["model"] for n in preset_names(cfg, role) if n in models}
+
+    if ids("planner") & ids("plan_critic"):
+        out.append("planner and plan_critic use the same model; the cross-check loses diversity")
+    if ids("workers") & ids("reviewer"):
+        out.append("reviewer shares a model with a worker; prefer a different one")
+    return out
+
+
+def availability(cfg):
+    """Check presets against local catalogs. Catalog presence is not proof of access."""
+    out, pi_ids, codex = [], None, None
+    if shutil.which("pi"):
+        env = dict(os.environ, PI_OFFLINE="1")
+        res = subprocess.run(["pi", "--list-models"], capture_output=True, text=True, env=env)
+        pi_ids = {"/".join(line.split()[:2]) for line in res.stdout.splitlines() if len(line.split()) >= 2}
+    toml = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "config.toml"
+    match = re.search(r'^model_catalog_json\s*=\s*"([^"]+)"', toml.read_text(), re.M) if toml.exists() else None
+    if match and Path(match.group(1)).expanduser().exists():
+        catalog = json.loads(Path(match.group(1)).expanduser().read_text())
+        codex = {m["slug"]: {e["effort"] for e in m.get("supported_reasoning_levels", [])}
+                 for m in catalog.get("models", [])}
+    for name, p in (cfg.get("models") or {}).items():
+        if p.get("cli") == "pi":
+            if pi_ids is None:
+                out.append("model %s: pi not installed, not checked" % name)
+            elif p["model"] not in pi_ids:
+                out.append("model %s: %s not in `pi --list-models`" % (name, p["model"]))
+            elif p["effort"] not in PI_EFFORTS:
+                out.append("model %s: effort %s is not a Pi thinking level" % (name, p["effort"]))
+        elif p.get("cli") == "codex":
+            if codex is None:
+                out.append("model %s: no Codex model catalog found, not checked" % name)
+            elif p["model"] not in codex:
+                out.append("model %s: %s not in the Codex catalog" % (name, p["model"]))
+            elif codex[p["model"]] and p["effort"] not in codex[p["model"]]:
+                out.append("model %s: effort %s not supported by %s" % (name, p["effort"], p["model"]))
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="kstack-models")
+    sub = ap.add_subparsers(dest="action", required=True)
+    sub.add_parser("show")
+    v = sub.add_parser("validate")
+    v.add_argument("--check", action="store_true", help="also check local model catalogs")
+    c = sub.add_parser("cmd")
+    c.add_argument("role", choices=ROLES)
+    c.add_argument("--index", type=int, default=0, help="task number; rotates the workers pool")
+    c.add_argument("--herdr", metavar="NAME", help="print a herdr agent start command")
+    c.add_argument("--pane", help="herdr pane id (with --herdr)")
+    a = ap.parse_args()
+    cfg = load()
+
+    if a.action == "show":
+        print("config: %s" % config_path())
+        for role in ROLES:
+            for n in preset_names(cfg, role):
+                p = (cfg.get("models") or {}).get(n, {})
+                print("%-21s %-18s %-6s %s:%s" % (role, n, p.get("cli"), p.get("model"), p.get("effort")))
+        print("execution: %s" % json.dumps(cfg.get("execution", {})))
+        print("finish: %s" % json.dumps(cfg.get("finish", {})))
+        return 0
+
+    errs = problems(cfg)
+    if errs:
+        sys.exit("kstack: invalid config %s\n  %s" % (config_path(), "\n  ".join(errs)))
+
+    if a.action == "validate":
+        notes = warnings(cfg) + (availability(cfg) if a.check else [])
+        for n in notes:
+            print("warning: %s" % n)
+        print("ok: %s" % config_path())
+        return 0
+
+    names = preset_names(cfg, a.role)
+    args = argv(cfg["models"][names[a.index % len(names)]])
+    if a.herdr:
+        if not a.pane:
+            sys.exit("kstack: --herdr needs --pane")
+        args = ["herdr", "agent", "start", a.herdr, "--kind", args[0], "--pane", a.pane, "--"] + args[1:]
+    print(" ".join(shlex.quote(x) for x in args))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

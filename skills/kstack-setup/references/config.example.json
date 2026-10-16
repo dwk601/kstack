@@ -1,0 +1,45 @@
+{
+  "models": {
+    "deep": {
+      "cli": "codex",
+      "model": "CODEX_MODEL_ID",
+      "effort": "high"
+    },
+    "critic": {
+      "cli": "pi",
+      "model": "PROVIDER/CRITIC_MODEL_ID",
+      "effort": "high"
+    },
+    "builder": {
+      "cli": "pi",
+      "model": "PROVIDER/WORKER_MODEL_ID",
+      "effort": "high"
+    },
+    "checker": {
+      "cli": "pi",
+      "model": "PROVIDER/REVIEWER_MODEL_ID",
+      "effort": "high"
+    }
+  },
+  "roles": {
+    "planner": "deep",
+    "plan_critic": "critic",
+    "workers": [
+      "builder"
+    ],
+    "reviewer": "checker",
+    "security_reviewer": "critic",
+    "integration_reviewer": "critic",
+    "fixer": "builder"
+  },
+  "execution": {
+    "max_workers": 4,
+    "max_fails": 3
+  },
+  "finish": {
+    "target": "pr-green",
+    "max_fix_rounds": 3,
+    "allow_merge": false,
+    "allow_deploy": false
+  }
+}
