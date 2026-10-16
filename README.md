@@ -1,6 +1,18 @@
 # kstack
 
-Agent skills for coding with any agent that reads `SKILL.md` skills: Claude Code, Codex, Pi, OpenCode, Cursor, Gemini CLI, and the rest of the [agents the `skills` CLI supports](https://github.com/vercel-labs/skills#supported-agents). Plan with two models that check each other, build the tasks with parallel reviewed workers, prove the result with a verification swarm, then push a PR and fix it until checks are green. Works in any repo. Uses visible Herdr agents when run inside Herdr.
+Agent skills for [Herdr](https://herdr.dev), the terminal workspace manager for AI coding agents. kstack turns Herdr into a team: it opens a pane per agent, starts the right agent in each (Claude Code, Codex, Pi, OpenCode, Gemini CLI, and more), briefs them, and collects their reports. Plan with two models that check each other, build the tasks with parallel reviewed workers, prove the result with a verification swarm, then push a PR and fix it until checks are green. Works in any repo.
+
+The skills are plain `SKILL.md` files, so they install into any agent that the [`skills` CLI supports](https://github.com/vercel-labs/skills#supported-agents). Herdr is where they do their best work.
+
+## Herdr
+
+Run your agent inside a Herdr pane and kstack drives the rest:
+
+- **Panes:** splits a sibling pane per agent (`herdr pane split`) and starts each role's agent there (`herdr agent start --kind <agent>`).
+- **Briefs and reports:** sends each assignment with `herdr agent prompt` and collects results with `herdr agent read` and `herdr agent wait`. You can watch every agent work.
+- **Mixed agents:** each role picks its own agent and model, for example Codex plans, Claude Code critiques, Pi builds. See [Config](#config).
+
+Outside Herdr the skills still work, but one foreground agent at a time through one-shot commands: no parallel workers, and any missing agent leaves a verification gap. Presets map to Herdr agent kinds (`pi`, `claude`, `codex`); a `custom` preset sets `kind` to any other kind Herdr supports.
 
 ## Install
 
