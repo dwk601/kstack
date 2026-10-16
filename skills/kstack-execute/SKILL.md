@@ -48,13 +48,13 @@ Fan out independent lanes at the code-ready SHA, each in its own detached worktr
 | Audit | 2 or more, each with its own focus | `../kstack-review/SKILL.md` audit mode on base..SHA |
 | Gates | 1 | Full checks, lint, and typecheck at the SHA. Run it yourself; no agent needed |
 | Live | One per user-visible behavior in the plan | `../kstack-verify/SKILL.md`: one scenario, saved evidence, pass rule. One lane runs the main scenario on base and head |
-| Perf | Only when the plan has a speed target | `../kstack-perf/SKILL.md` on base and head |
+| Perf | Only when the plan has a speed target | Measure base and head the `../kstack-perf/SKILL.md` way. Measure only; a miss is a finding |
 
 Size the swarm to the change. Skip live lanes only when the project cannot run, and say so.
 
 - Each lane reports PASS, FAIL, or BLOCKED with evidence and the SHA. Drop a report without the SHA and respawn that lane once. A second miss is a gap.
 - Clean only when every lane passes. A defect base already has is recorded against base and does not gate the job.
-- Every proven finding, however a lane labeled it, becomes a repair task through steps 2 to 4. One repair round. Then one verifier reruns the failed lanes at the new head. Run a full swarm again only for new behavior or a large new diff.
+- Every proven finding, however a lane labeled it, becomes a repair task through steps 2 to 4. One repair round. Then one verifier at the new head reruns the gates, the failed lanes, and every lane the repair could affect. Run a full swarm again only for new behavior or a large new diff.
 
 ## 6. Report
 

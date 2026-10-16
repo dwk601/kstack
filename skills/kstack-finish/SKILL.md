@@ -24,7 +24,7 @@ Repeat up to `max_fix_rounds`:
 2. If red, read the failed logs and classify: caused by this change, already broken on base, infrastructure, or flaky. Prove it, for example by checking the base branch's latest run. Infrastructure or flaky gets one rerun.
 3. The `fixer` fixes real failures on this branch. The `reviewer` checks the fix with `../kstack-review/SKILL.md`. Push, then back to step 1.
 4. Review comments: judge each against the code. Fix the real ones and reply to the rest with a reason. Do not change code just to quiet a bot.
-5. Merge conflicts: rebase if the branch is yours and the resolution is clear, then push with `--force-with-lease`. Otherwise stop and report.
+5. Merge conflicts: rebase if the branch is yours and the resolution is clear, have the `reviewer` check the resolution, then push with `--force-with-lease`. Otherwise stop and report.
 
 Stop when green, when rounds run out, or when a human must decide. Never disable checks, skip tests, or change branch protection to get green. Report a failure that is already on base; do not hide it.
 
@@ -32,7 +32,7 @@ No CI: run the project checks locally and report `NO_CI` with that evidence.
 
 ## Merge and deploy (only when allowed)
 
-Never merge with open verification findings. Merge with the repo's method once approvals and protection allow it. Read back that it merged; a queued auto-merge is not merged. Then check `deploy_checks` from `.kstack/project.json` against the merge SHA by reading the actual step logs. Fix a broken deploy with a new PR, never by rewriting history.
+Merge only a head that was verified: execute's swarm SHA plus later commits that each passed review. A fix that adds behavior or a large diff reruns execute's verification swarm first. Never merge with open findings. Merge with the repo's method once approvals and protection allow it. Read back that it merged; a queued auto-merge is not merged. Then check `deploy_checks` from `.kstack/project.json` against the merge SHA by reading the actual step logs. Fix a broken deploy with a new PR, never by rewriting history.
 
 ## Report
 

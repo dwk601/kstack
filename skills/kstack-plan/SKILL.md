@@ -17,4 +17,4 @@ Goal: a short plan grounded in the code. It stays in the conversation. Do not wr
 5. Planner applies the valid points once. Settle factual disagreements by reading or running code, not by vote. Ask the user only for a product choice the code cannot answer.
 6. Return the final plan in chat. Close only agents this stage opened.
 
-Roles: `planner` and `plan_critic` from config. If the coordinator's own model matches `planner`, it may plan itself. The critic is always a separate agent with a fresh context.
+Roles: `planner` and `plan_critic` from config. If the coordinator's own model matches `planner`, it may plan itself. The critic is always a separate agent with a fresh context. If both roles resolve to the same model, say the cross-check used one model.
