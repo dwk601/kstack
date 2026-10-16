@@ -48,8 +48,9 @@ def argv(preset, oneshot=False):
         args = ["pi"] + (["-p", "--no-session"] if oneshot else [])
         args += ["--model", "%s:%s" % (preset["model"], preset["effort"])]
     else:
-        args = ["codex"] + (["exec"] if oneshot else [])
-        args += ["-m", preset["model"], "-c", "model_reasoning_effort=%s" % preset["effort"]]
+        # Preset args go before `exec`: root-only options (for example --search, -a) fail after it.
+        args = ["codex"] + list(preset.get("args", [])) + (["exec"] if oneshot else [])
+        return args + ["-m", preset["model"], "-c", "model_reasoning_effort=%s" % preset["effort"]]
     return args + list(preset.get("args", []))
 
 
@@ -61,6 +62,8 @@ def problems(cfg):
         for key in ("model", "effort"):
             if not isinstance(p.get(key), str) or not p.get(key):
                 out.append("model %s: missing %s" % (name, key))
+        if p.get("cli") == "pi" and p.get("effort") and p.get("effort") not in PI_EFFORTS:
+            out.append("model %s: effort must be one of %s" % (name, ", ".join(PI_EFFORTS)))
         args = p.get("args", [])
         if not isinstance(args, list) or not all(isinstance(x, str) for x in args):
             out.append("model %s: args must be a list of strings" % name)
@@ -114,8 +117,6 @@ def availability(cfg):
                 notes.append("model %s: pi not installed, not checked" % name)
             elif p["model"] not in pi_ids:
                 out.append("model %s: %s not in `pi --list-models`" % (name, p["model"]))
-            elif p["effort"] not in PI_EFFORTS:
-                out.append("model %s: effort %s is not a Pi thinking level" % (name, p["effort"]))
         elif p.get("cli") == "codex":
             if codex is None:
                 notes.append("model %s: no Codex model catalog found, not checked" % name)
