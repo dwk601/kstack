@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # kstack plan
 
+Shared rules: read `../kstack/SKILL.md` first.
+
 Goal: a short plan grounded in the code. It stays in the conversation. Do not write plan files.
 
 1. Quote the request. Note what is out of scope.

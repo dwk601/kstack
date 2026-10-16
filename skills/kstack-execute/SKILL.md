@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # kstack execute
 
+Shared rules: read `../kstack/SKILL.md` first.
+
 Input: the plan in this conversation. If it is gone, rebuild it from the request, the code, and existing branches. Never invent one. No push, PR, or deploy here.
 
 ## Start

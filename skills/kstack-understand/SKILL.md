@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # kstack understand
 
+Shared rules: read `../kstack/SKILL.md` first.
+
 Read only. Answer the question asked, at the depth asked.
 
 1. Find the entry points, then follow the real path: callers, data shapes, state, side effects, config, tests.

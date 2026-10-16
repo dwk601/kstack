@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # kstack perf
 
+Shared rules: read `../kstack/SKILL.md` first.
+
 1. Write the claim you want to make, for example "export p50 under 200 ms on 60k rows". Pick a realistic workload.
 2. Baseline: run it several times and note median and range. Count errors and confirm the work actually ran.
 3. Find the limiter with a profiler or trace, not by reading code.

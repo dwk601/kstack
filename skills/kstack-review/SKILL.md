@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # kstack review
 
+Shared rules: read `../kstack/SKILL.md` first.
+
 You are not the author. Do not edit source or tests. Assume the goal is right and test the execution.
 
 ## Modes

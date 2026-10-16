@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # kstack debug
 
+Shared rules: read `../kstack/SKILL.md` first.
+
 1. Reproduce it where it happens: UI, CLI, API, or job. If it will not reproduce, narrow the conditions or add logging until it does. If you cannot reach that surface, say why.
 2. List hypotheses. Test the one that cuts the most: logs, a probe script, `git bisect`, a debugger. Drop what the evidence rules out.
 3. Name the mechanism before fixing. If two fixes built on one assumption failed, question the assumption. If the user asked only for a diagnosis, stop here.

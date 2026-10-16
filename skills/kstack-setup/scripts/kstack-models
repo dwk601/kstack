@@ -3,7 +3,7 @@
 
   kstack-models show
   kstack-models validate [--check]
-  kstack-models cmd ROLE [--index N] [--herdr NAME --pane ID]
+  kstack-models cmd ROLE [--index N] [--herdr NAME --pane ID | --oneshot]
 """
 import argparse
 import json
@@ -43,12 +43,13 @@ def preset_names(cfg, role):
     return value if isinstance(value, list) else ([value] if value else [])
 
 
-def argv(preset):
+def argv(preset, oneshot=False):
     if preset["cli"] == "pi":
-        args = ["pi", "--model", "%s:%s" % (preset["model"], preset["effort"])]
+        args = ["pi"] + (["-p", "--no-session"] if oneshot else [])
+        args += ["--model", "%s:%s" % (preset["model"], preset["effort"])]
     else:
-        args = ["codex", "-m", preset["model"],
-                "-c", "model_reasoning_effort=%s" % preset["effort"]]
+        args = ["codex"] + (["exec"] if oneshot else [])
+        args += ["-m", preset["model"], "-c", "model_reasoning_effort=%s" % preset["effort"]]
     return args + list(preset.get("args", []))
 
 
@@ -60,8 +61,9 @@ def problems(cfg):
         for key in ("model", "effort"):
             if not isinstance(p.get(key), str) or not p.get(key):
                 out.append("model %s: missing %s" % (name, key))
-        if not isinstance(p.get("args", []), list):
-            out.append("model %s: args must be a list" % name)
+        args = p.get("args", [])
+        if not isinstance(args, list) or not all(isinstance(x, str) for x in args):
+            out.append("model %s: args must be a list of strings" % name)
     for role in ROLES:
         names = preset_names(cfg, role)
         if not names:
@@ -91,8 +93,11 @@ def warnings(cfg):
 
 
 def availability(cfg):
-    """Check presets against local catalogs. Catalog presence is not proof of access."""
-    out, pi_ids, codex = [], None, None
+    """Check presets against local catalogs. Catalog presence is not proof of access.
+
+    Returns (errors, notes): errors are confirmed-unusable presets, notes are unchecked ones.
+    """
+    out, notes, pi_ids, codex = [], [], None, None
     if shutil.which("pi"):
         env = dict(os.environ, PI_OFFLINE="1")
         res = subprocess.run(["pi", "--list-models"], capture_output=True, text=True, env=env)
@@ -106,19 +111,19 @@ def availability(cfg):
     for name, p in (cfg.get("models") or {}).items():
         if p.get("cli") == "pi":
             if pi_ids is None:
-                out.append("model %s: pi not installed, not checked" % name)
+                notes.append("model %s: pi not installed, not checked" % name)
             elif p["model"] not in pi_ids:
                 out.append("model %s: %s not in `pi --list-models`" % (name, p["model"]))
             elif p["effort"] not in PI_EFFORTS:
                 out.append("model %s: effort %s is not a Pi thinking level" % (name, p["effort"]))
         elif p.get("cli") == "codex":
             if codex is None:
-                out.append("model %s: no Codex model catalog found, not checked" % name)
+                notes.append("model %s: no Codex model catalog found, not checked" % name)
             elif p["model"] not in codex:
                 out.append("model %s: %s not in the Codex catalog" % (name, p["model"]))
             elif codex[p["model"]] and p["effort"] not in codex[p["model"]]:
                 out.append("model %s: effort %s not supported by %s" % (name, p["effort"], p["model"]))
-    return out
+    return out, notes
 
 
 def main():
@@ -132,6 +137,8 @@ def main():
     c.add_argument("--index", type=int, default=0, help="task number; rotates the workers pool")
     c.add_argument("--herdr", metavar="NAME", help="print a herdr agent start command")
     c.add_argument("--pane", help="herdr pane id (with --herdr)")
+    c.add_argument("--oneshot", action="store_true",
+                   help="non-interactive form (pi -p / codex exec); append the brief as the last argument")
     a = ap.parse_args()
     cfg = load()
 
@@ -150,17 +157,19 @@ def main():
         sys.exit("kstack: invalid config %s\n  %s" % (config_path(), "\n  ".join(errs)))
 
     if a.action == "validate":
-        notes = warnings(cfg) + (availability(cfg) if a.check else [])
-        for n in notes:
+        bad, notes = availability(cfg) if a.check else ([], [])
+        for n in warnings(cfg) + notes:
             print("warning: %s" % n)
+        if bad:
+            sys.exit("kstack: unusable models in %s\n  %s" % (config_path(), "\n  ".join(bad)))
         print("ok: %s" % config_path())
         return 0
 
     names = preset_names(cfg, a.role)
-    args = argv(cfg["models"][names[a.index % len(names)]])
+    args = argv(cfg["models"][names[a.index % len(names)]], a.oneshot)
     if a.herdr:
-        if not a.pane:
-            sys.exit("kstack: --herdr needs --pane")
+        if not a.pane or a.oneshot:
+            sys.exit("kstack: --herdr needs --pane and cannot be combined with --oneshot")
         args = ["herdr", "agent", "start", a.herdr, "--kind", args[0], "--pane", a.pane, "--"] + args[1:]
     print(" ".join(shlex.quote(x) for x in args))
     return 0

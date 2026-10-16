@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # kstack verify
 
+Shared rules: read `../kstack/SKILL.md` first.
+
 1. Find how the project runs: `verify` in `.kstack/project.json`, README, package scripts, Makefile, CI. Prefer existing harnesses: e2e tests, scripts, HTTP endpoints, the CLI itself.
 2. Start an isolated instance: its own port, data directory, and test account. Wait until it is usable, not just started. Never touch production data.
 3. Drive the feature the way a user does. Capture the action and the result: output, screenshot, response body, database row, file written.

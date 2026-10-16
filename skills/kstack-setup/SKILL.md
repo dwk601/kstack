@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # kstack setup
 
+Shared rules: read `../kstack/SKILL.md` first.
+
 ## User config
 
 Path: `$KSTACK_CONFIG`, else `$XDG_CONFIG_HOME/kstack/config.json`, else `~/.config/kstack/config.json`. Shape: `references/config.example.json`.

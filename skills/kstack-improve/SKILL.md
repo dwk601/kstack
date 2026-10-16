@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # kstack improve
 
+Shared rules: read `../kstack/SKILL.md` first.
+
 1. Collect evidence: recent review FAILs, reverts, fix commits, PR comments, and the user's corrections. A mistake class counts once it has happened twice.
 2. Fix each class at the highest level that works:
    1. Structure: one owner for the state, one way to do the task, delete the old way.

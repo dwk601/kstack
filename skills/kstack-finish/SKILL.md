@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # kstack finish
 
+Shared rules: read `../kstack/SKILL.md` first.
+
 Done means required checks are green on the PR's current head. Merge or deploy only when the target asks for it and the user allowed it (in the request, or `allow_merge` / `allow_deploy`).
 
 ## Publish
