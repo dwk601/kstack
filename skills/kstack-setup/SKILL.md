@@ -14,7 +14,7 @@ Path: `$KSTACK_CONFIG`, else `$XDG_CONFIG_HOME/kstack/config.json`, else `~/.con
 
 - `models`: named presets. Each has `cli` (`pi` or `codex`), exact `model`, `effort`, and optional `args` (for example `["--yolo"]`).
 - `roles`: a preset name per role: `planner`, `plan_critic`, `workers`, `reviewer`, `security_reviewer`, `integration_reviewer`, `fixer`. `workers` is a list; tasks rotate through it, one task per worker, never the same task twice.
-- `execution`: `max_workers` (concurrent tasks), `max_fails` (review FAILs before a task is blocked).
+- `execution`: `max_fails` (review FAILs before a task is blocked). There is no worker cap; execute starts every ready task at once.
 - `finish`: `target` (`pr-green`, `merged`, or `deployed`), `max_fix_rounds`, `allow_merge`, `allow_deploy`.
 
 ## Steps

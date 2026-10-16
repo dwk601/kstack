@@ -72,10 +72,9 @@ def problems(cfg):
         if not names:
             out.append("role %s: not set" % role)
         out += ["role %s: unknown model '%s'" % (role, n) for n in names if n not in models]
-    for key in ("max_workers", "max_fails"):
-        value = (cfg.get("execution") or {}).get(key)
-        if not isinstance(value, int) or value < 1:
-            out.append("execution.%s: must be a positive integer" % key)
+    value = (cfg.get("execution") or {}).get("max_fails")
+    if not isinstance(value, int) or value < 1:
+        out.append("execution.max_fails: must be a positive integer")
     finish = cfg.get("finish") or {}
     if finish.get("target", "pr-green") not in ("pr-green", "merged", "deployed"):
         out.append("finish.target: must be pr-green, merged, or deployed")

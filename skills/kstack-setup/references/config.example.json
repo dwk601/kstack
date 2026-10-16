@@ -33,7 +33,6 @@
     "fixer": "builder"
   },
   "execution": {
-    "max_workers": 4,
     "max_fails": 3
   },
   "finish": {
