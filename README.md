@@ -1,25 +1,44 @@
 # kstack
 
-Agent skills for coding with Pi and Codex. Plan with two models that check each other, build the tasks with parallel reviewed workers, prove the result with a verification swarm, then push a PR and fix it until checks are green. Works in any repo. Uses visible Herdr agents when run inside Herdr.
+Agent skills for coding with any agent that reads `SKILL.md` skills: Claude Code, Codex, Pi, OpenCode, Cursor, Gemini CLI, and the rest of the [agents the `skills` CLI supports](https://github.com/vercel-labs/skills#supported-agents). Plan with two models that check each other, build the tasks with parallel reviewed workers, prove the result with a verification swarm, then push a PR and fix it until checks are green. Works in any repo. Uses visible Herdr agents when run inside Herdr.
 
 ## Install
 
 ```sh
-npx skills add <owner>/kstack        # from GitHub
-npx skills add ./kstack              # from a local clone
+npx skills add dwk601/kstack            # pick agents interactively
+npx skills add dwk601/kstack -g         # user-level, available in every project
+npx skills add dwk601/kstack -g --skill '*' -a claude-code -a codex -a pi -y   # named agents, no prompts
+npx skills add ./kstack                 # from a local clone
 ```
 
-Install all skills together; they reference each other by relative path. Needs `python3` for model resolution and `gh` for Finish on GitHub.
+Install all 11 skills together; they reference each other by relative path. The CLI detects the agents you have installed; `-a <agent>` targets specific ones (names are in the supported-agents list above). Needs `python3` for model resolution and `gh` for Finish on GitHub.
+
+## Update
+
+```sh
+npx skills update        # all installed skills; prompts for project or global
+npx skills update -g     # global skills only
+npx skills list -g       # what is installed, and for which agents
+```
+
+For a local clone, re-run `npx skills add ./kstack` after changes. Config in `~/.config/kstack/` is never touched by installs or updates.
 
 ## Use
 
-| Pi | Codex | Does |
-|---|---|---|
-| `/skill:kstack-setup` | `$kstack-setup` | Pick CLI, model, and effort per role. Run once. |
-| `/skill:kstack <task>` | `$kstack <task>` | Plan, then execute. Stops before publishing. |
-| `/skill:kstack-finish` | `$kstack-finish` | Push, open the PR, fix until green. |
+Run setup once, then hand it a task.
 
-All entry points are explicit-only. Invoked workflows read the supporting skills they need. Diagnosis and explanation stay read-only; code-changing requests use Plan and Execute.
+| Agent | Setup | Task | Ship |
+|---|---|---|---|
+| Claude Code | `/kstack-setup` | `/kstack <task>` | `/kstack-finish` |
+| Codex | `$kstack-setup` | `$kstack <task>` | `$kstack-finish` |
+| Pi | `/skill:kstack-setup` | `/skill:kstack <task>` | `/skill:kstack-finish` |
+| Any other agent | "use the kstack-setup skill" | "use the kstack skill to <task>" | "use the kstack-finish skill" |
+
+- **Setup** picks the agent CLI, model, and effort per role.
+- **Task** plans, then executes. It stops before publishing.
+- **Ship** pushes, opens the PR, and fixes it until green.
+
+All entry points are explicit-only, declared in the `SKILL.md` frontmatter (`disable-model-invocation`) and `agents/openai.yaml`. An agent that reads neither may still load them on its own. Invoked workflows read the supporting skills they need. Diagnosis and explanation stay read-only; code-changing requests use Plan and Execute.
 
 ## Skills
 
@@ -40,6 +59,30 @@ All entry points are explicit-only. Invoked workflows read the supporting skills
 ## Config
 
 User config: `~/.config/kstack/config.json` (or `$KSTACK_CONFIG`). See `skills/kstack-setup/references/config.example.json`. Optional per-repo `.kstack/project.json` holds check commands and finish settings.
+
+The agent you talk to can be any of the above. Each role (planner, critic, workers, reviewers, verifiers) runs through the CLI in its preset, so one job can mix agents:
+
+| `cli` | Runs | Notes |
+|---|---|---|
+| `pi` | `pi --model <model>:<effort>` | Models from `pi --list-models` |
+| `codex` | `codex -m <model> -c model_reasoning_effort=<effort>` | Catalog from `model_catalog_json` in `~/.codex/config.toml` |
+| `claude` | `claude --model <model> --effort <effort>` | Alias (`opus`) or full name; efforts `low` to `max` |
+| `custom` | Your `command` and `oneshot` argv templates | Any other agent CLI; `{model}` and `{effort}` are filled in |
+
+A `custom` preset, for OpenCode as an example:
+
+```json
+"opencode": {
+  "cli": "custom",
+  "kind": "opencode",
+  "model": "PROVIDER/MODEL_ID",
+  "effort": "high",
+  "command": ["opencode", "-m", "{model}", "--variant", "{effort}"],
+  "oneshot": ["opencode", "run", "-m", "{model}", "--variant", "{effort}"]
+}
+```
+
+Check the flags against the agent's `--help` first. The helper cannot verify `claude` or `custom` models; `validate --check` reports them as unchecked.
 
 ```sh
 python3 skills/kstack-setup/scripts/kstack-models show

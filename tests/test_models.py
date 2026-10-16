@@ -126,7 +126,7 @@ class ProblemsTest(unittest.TestCase):
 
     def test_existing_preset_checks_kept(self):
         errs = km.problems(cfg(models__builder={"cli": "bash", "model": "", "effort": "huge", "args": "x"}))
-        self.assertIn("model builder: cli must be one of pi, codex", errs)
+        self.assertIn("model builder: cli must be one of pi, codex, claude, custom", errs)
         self.assertIn("model builder: missing model", errs)
         self.assertIn("model builder: args must be a list of strings", errs)
         errs = km.problems(cfg(models__critic__effort="huge"))
@@ -146,9 +146,68 @@ class ArgvTest(unittest.TestCase):
         self.assertEqual(km.argv(p, oneshot=True),
                          ["codex", "--search", "exec", "-m", "gpt-deep", "-c", "model_reasoning_effort=high"])
 
+    def test_claude_interactive_and_oneshot(self):
+        p = {"cli": "claude", "model": "opus", "effort": "high", "args": ["--allowedTools", "Read"]}
+        self.assertEqual(km.argv(p), ["claude", "--allowedTools", "Read", "--model", "opus", "--effort", "high"])
+        self.assertEqual(km.argv(p, oneshot=True),
+                         ["claude", "--allowedTools", "Read", "-p", "--model", "opus", "--effort", "high"])
+
+    def test_custom_templates_fill_model_and_effort(self):
+        p = {"cli": "custom", "model": "m-1", "effort": "low", "kind": "opencode",
+             "command": ["opencode", "-m", "{model}", "--variant", "{effort}"],
+             "oneshot": ["opencode", "run", "-m", "{model}", "--variant", "{effort}"]}
+        self.assertEqual(km.argv(p), ["opencode", "-m", "m-1", "--variant", "low"])
+        self.assertEqual(km.argv(p, oneshot=True), ["opencode", "run", "-m", "m-1", "--variant", "low"])
+
+    def test_custom_without_oneshot_exits(self):
+        p = {"cli": "custom", "model": "m", "effort": "low", "command": ["agent"]}
+        with self.assertRaises(SystemExit):
+            km.argv(p, oneshot=True)
+
     def test_configured_ids_never_rewritten(self):
         p = {"cli": "pi", "model": "OpenAI/GPT-X", "effort": "high"}
         self.assertEqual(km.argv(p), ["pi", "--model", "OpenAI/GPT-X:high"])
+
+
+class MoreAgentsTest(unittest.TestCase):
+    CUSTOM = {"cli": "custom", "model": "m", "effort": "low", "kind": "opencode",
+              "command": ["opencode", "-m", "{model}"], "oneshot": ["opencode", "run", "-m", "{model}"]}
+
+    def test_claude_and_custom_presets_validate(self):
+        c = cfg(models__critic={"cli": "claude", "model": "opus", "effort": "max"},
+                models__checker=self.CUSTOM)
+        self.assertEqual(km.problems(c), [])
+
+    def test_claude_effort_validated(self):
+        errs = km.problems(cfg(models__critic={"cli": "claude", "model": "opus", "effort": "off"}))
+        self.assertIn("model critic: effort must be one of %s" % ", ".join(km.CLAUDE_EFFORTS), errs)
+
+    def test_custom_shape_validated(self):
+        bad = dict(self.CUSTOM, command=[], oneshot="x", args=["--yolo"], kind=3)
+        errs = km.problems(cfg(models__checker=bad))
+        self.assertIn("model checker: command must be a non-empty list of strings", errs)
+        self.assertIn("model checker: oneshot must be a non-empty list of strings", errs)
+        self.assertIn("model checker: custom presets take no args; put them in command and oneshot", errs)
+        self.assertIn("model checker: kind must be a string", errs)
+
+    def test_cmd_forms_for_claude_and_custom(self):
+        c = cfg(models__critic={"cli": "claude", "model": "opus", "effort": "high"}, models__checker=self.CUSTOM)
+        self.assertEqual(run_cli(c, "cmd", "plan_critic").stdout.strip(), "claude --model opus --effort high")
+        self.assertEqual(run_cli(c, "cmd", "plan_critic", "--oneshot").stdout.strip(),
+                         "claude -p --model opus --effort high")
+        r = run_cli(c, "cmd", "reviewer", "--herdr", "rev", "--pane", "p1")
+        self.assertEqual(r.stdout.strip(), "herdr agent start rev --kind opencode --pane p1 -- -m m")
+        r = run_cli(c, "cmd", "plan_critic", "--herdr", "c", "--pane", "p2")
+        self.assertEqual(r.stdout.strip(), "herdr agent start c --kind claude --pane p2 -- --model opus --effort high")
+
+    def test_uncatalogued_clis_are_noted_not_failed(self):
+        c = cfg(models__critic={"cli": "claude", "model": "opus", "effort": "high"}, models__checker=self.CUSTOM)
+        with mock.patch.object(km.subprocess, "run", side_effect=AssertionError("no catalog call expected")), \
+                mock.patch.object(km.shutil, "which", return_value=None):
+            c["models"]["builder"] = c["models"]["builder2"] = c["models"]["deep"] = self.CUSTOM
+            bad, notes = km.availability(c)
+        self.assertEqual(bad, [])
+        self.assertEqual(notes, ["no model catalog for claude, custom; those presets not checked"])
 
 
 class CmdCliTest(unittest.TestCase):

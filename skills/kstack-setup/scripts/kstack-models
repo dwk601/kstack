@@ -4,6 +4,10 @@
   kstack-models show
   kstack-models validate [--check]
   kstack-models cmd ROLE [--index N] [--herdr NAME --pane ID | --oneshot]
+
+Built-in CLIs: pi, codex, claude. Any other agent CLI uses `"cli": "custom"` with explicit
+`command` (interactive) and `oneshot` (non-interactive) argv templates; `{model}` and
+`{effort}` are substituted.
 """
 import argparse
 import json
@@ -17,8 +21,9 @@ from pathlib import Path
 
 ROLES = ("planner", "plan_critic", "workers", "reviewer",
          "security_reviewer", "verifiers", "fixer")
-CLIS = ("pi", "codex")
+CLIS = ("pi", "codex", "claude", "custom")
 PI_EFFORTS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
+CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 PI_LIST_TIMEOUT = 30  # seconds; `pi --list-models` must not hang validate --check
 
 
@@ -57,7 +62,20 @@ def positive_int(value):
     return isinstance(value, int) and not isinstance(value, bool) and value >= 1
 
 
+def fill(template, preset):
+    return [x.replace("{model}", preset["model"]).replace("{effort}", preset["effort"]) for x in template]
+
+
 def argv(preset, oneshot=False):
+    if preset["cli"] == "custom":
+        template = preset.get("oneshot") if oneshot else preset["command"]
+        if not template:
+            sys.exit("kstack: custom preset has no `oneshot` command; add one or use the herdr form")
+        return fill(template, preset)
+    if preset["cli"] == "claude":
+        # Preset args first: a variadic option such as --allowedTools stops at the next flag.
+        args = ["claude"] + list(preset.get("args", [])) + (["-p"] if oneshot else [])
+        return args + ["--model", preset["model"], "--effort", preset["effort"]]
     if preset["cli"] == "pi":
         args = ["pi"] + (["-p", "--no-session"] if oneshot else [])
         args += ["--model", "%s:%s" % (preset["model"], preset["effort"])]
@@ -85,9 +103,22 @@ def problems(cfg):
                 out.append("model %s: missing %s" % (name, key))
         if p.get("cli") == "pi" and p.get("effort") and p.get("effort") not in PI_EFFORTS:
             out.append("model %s: effort must be one of %s" % (name, ", ".join(PI_EFFORTS)))
+        if p.get("cli") == "claude" and p.get("effort") and p.get("effort") not in CLAUDE_EFFORTS:
+            out.append("model %s: effort must be one of %s" % (name, ", ".join(CLAUDE_EFFORTS)))
         args = p.get("args", [])
         if not isinstance(args, list) or not all(isinstance(x, str) for x in args):
             out.append("model %s: args must be a list of strings" % name)
+        if p.get("cli") == "custom":
+            for key, required in (("command", True), ("oneshot", False)):
+                value = p.get(key)
+                if value is None and not required:
+                    continue
+                if not isinstance(value, list) or not value or not all(isinstance(x, str) and x for x in value):
+                    out.append("model %s: %s must be a non-empty list of strings" % (name, key))
+            if "args" in p:
+                out.append("model %s: custom presets take no args; put them in command and oneshot" % name)
+            if "kind" in p and not isinstance(p["kind"], str):
+                out.append("model %s: kind must be a string" % name)
     for role in ROLES:
         names = preset_names(cfg, role)
         if not all(isinstance(n, str) for n in names):
@@ -175,6 +206,9 @@ def availability(cfg):
     presets = (cfg.get("models") or {}).items()
     clis = {p.get("cli") for _, p in presets}
     pi_ids = codex = None
+    unchecked = sorted(c for c in clis if c in ("claude", "custom"))
+    if unchecked:
+        notes.append("no model catalog for %s; those presets not checked" % ", ".join(unchecked))
     if "pi" in clis:
         pi_ids, why = pi_catalog() if shutil.which("pi") else (None, "pi not installed")
         if pi_ids is None:
@@ -207,7 +241,7 @@ def main():
     c.add_argument("--herdr", metavar="NAME", help="print a herdr agent start command")
     c.add_argument("--pane", help="herdr pane id (with --herdr)")
     c.add_argument("--oneshot", action="store_true",
-                   help="non-interactive form (pi -p / codex exec); append the brief as the last argument")
+                   help="non-interactive form (pi -p / codex exec / claude -p); append the brief as the last argument")
     a = ap.parse_args()
     cfg = load()
 
@@ -237,11 +271,13 @@ def main():
         return 0
 
     names = preset_names(cfg, a.role)
-    args = argv(cfg["models"][names[a.index % len(names)]], a.oneshot)
+    preset = cfg["models"][names[a.index % len(names)]]
+    args = argv(preset, a.oneshot)
     if a.herdr:
         if not a.pane or a.oneshot:
             sys.exit("kstack: --herdr needs --pane and cannot be combined with --oneshot")
-        args = ["herdr", "agent", "start", a.herdr, "--kind", args[0], "--pane", a.pane, "--"] + args[1:]
+        kind = preset.get("kind", args[0]) if preset["cli"] == "custom" else args[0]
+        args = ["herdr", "agent", "start", a.herdr, "--kind", kind, "--pane", a.pane, "--"] + args[1:]
     print(" ".join(shlex.quote(x) for x in args))
     return 0
 
