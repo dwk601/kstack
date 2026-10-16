@@ -29,7 +29,10 @@
     ],
     "reviewer": "checker",
     "security_reviewer": "critic",
-    "integration_reviewer": "critic",
+    "verifiers": [
+      "critic",
+      "checker"
+    ],
     "fixer": "builder"
   },
   "execution": {

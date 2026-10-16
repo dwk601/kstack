@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ROLES = ("planner", "plan_critic", "workers", "reviewer",
-         "security_reviewer", "integration_reviewer", "fixer")
+         "security_reviewer", "verifiers", "fixer")
 CLIS = ("pi", "codex")
 PI_EFFORTS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
 
@@ -89,8 +89,11 @@ def warnings(cfg):
 
     if ids("planner") & ids("plan_critic"):
         out.append("planner and plan_critic use the same model; the cross-check loses diversity")
-    if ids("workers") & ids("reviewer"):
-        out.append("reviewer shares a model with a worker; prefer a different one")
+    if ids("workers") & (ids("reviewer") | ids("verifiers")):
+        out.append("a reviewer or verifier shares a model with a worker; prefer a different one")
+    audit = [models[n]["model"] for n in preset_names(cfg, "verifiers")[:2] if n in models]
+    if len(set(audit)) < 2:
+        out.append("the two audit lanes run on one model; list two different verifiers first")
     return out
 
 

@@ -11,7 +11,7 @@ Shared rules: read `../kstack/SKILL.md` first.
 1. Find how the project runs: `verify` in `.kstack/project.json`, README, package scripts, Makefile, CI. Prefer existing harnesses: e2e tests, scripts, HTTP endpoints, the CLI itself.
 2. Start an isolated instance: its own port, data directory, and test account. Wait until it is usable, not just started. Never touch production data.
 3. Drive the feature the way a user does. Capture the action and the result: output, screenshot, response body, database row, file written.
-4. Check side effects, not just what is visible.
+4. Check side effects, not just what is visible. As a swarm lane, use the detached checkout at the given SHA, run your one scenario, and judge it by its pass rule. For a base-versus-head lane, run the same scenario on both.
 5. Stop only what you started, by PID. Keep the evidence and report its path.
 
 Report: commands run, revision, what you saw, evidence paths, and what you could not verify and why. Wrong surface or inconclusive is not a pass.

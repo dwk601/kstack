@@ -1,6 +1,6 @@
 # kstack
 
-Agent skills for coding with Pi and Codex. Plan with two models that check each other, execute as a reviewed swarm, then push a PR and fix it until checks are green. Works in any repo. Uses visible Herdr agents when run inside Herdr.
+Agent skills for coding with Pi and Codex. Plan with two models that check each other, build the tasks with parallel reviewed workers, prove the result with a verification swarm, then push a PR and fix it until checks are green. Works in any repo. Uses visible Herdr agents when run inside Herdr.
 
 ## Install
 
@@ -28,11 +28,11 @@ All skills are explicit only. They never load on their own.
 | `kstack` | Entry point and shared rules |
 | `kstack-setup` | Models per role, project commands |
 | `kstack-plan` | Investigate; planner and critic cross-check a plan |
-| `kstack-execute` | Swarm: one worker and one reviewer per task, serial integration |
+| `kstack-execute` | Parallel workers with per-task review, serial integration, then a verification swarm |
 | `kstack-finish` | Push, PR, watch checks, fix until green |
 | `kstack-understand` | How and why code works |
 | `kstack-debug` | Root cause with runtime evidence |
-| `kstack-review` | PASS, FAIL, or BLOCKED with evidence |
+| `kstack-review` | Plan, code, security, or audit review: PASS, FAIL, or BLOCKED with evidence |
 | `kstack-verify` | Drive the real app and keep proof |
 | `kstack-perf` | Baseline, limiter, measured fix |
 | `kstack-improve` | Turn repeated mistakes into checks |
@@ -45,6 +45,7 @@ User config: `~/.config/kstack/config.json` (or `$KSTACK_CONFIG`). See `skills/k
 python3 skills/kstack-setup/scripts/kstack-models show
 python3 skills/kstack-setup/scripts/kstack-models validate --check
 python3 skills/kstack-setup/scripts/kstack-models cmd workers --index 2
+python3 skills/kstack-setup/scripts/kstack-models cmd verifiers --index 1
 ```
 
 ## Not included

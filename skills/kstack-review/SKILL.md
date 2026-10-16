@@ -15,9 +15,9 @@ You are not the author. Do not edit source or tests. Assume the goal is right an
 - **plan**: check the plan against the code. Missing or extra scope, wrong facts, file overlap, false or missing dependencies, serial work that could be parallel, acceptance no one can check.
 - **code** (default): review an exact SHA against its base.
 - **security**: auth and permissions, input reaching shell, SQL, or HTML, secrets in code or logs, migrations, data exposure. Trace each input path.
-- **integration**: the combined diff of several tasks. Cross-task behavior, scope against the request, regressions against base. Not per-task style.
+- **audit**: a verification-swarm lane on the combined diff base..SHA. Worker reports are claims, not facts; rerun what they say passed. Stay on your assigned focus: cross-task behavior, scope against the request, or regressions against base. Not per-task style.
 
-## Code review
+## Code and audit review
 
 1. Record base and head SHA. Run the task's check and lint at that SHA. If the environment fails, return BLOCKED with the error.
 2. Read the diff against the acceptance criteria.

@@ -14,7 +14,7 @@ Done means required checks are green on the PR's current head. Merge or deploy o
 
 1. Find what to ship: the `kstack/<job>` branch, the current branch, or the PR the user named. Check the remote, base, fork or upstream, and any open PR. Reuse an open PR.
 2. Read the full diff. Commit only in-scope changes; leave unrelated files alone. Never push to the base branch. Never force-push a shared branch.
-3. Push. Open or update the PR: title in the repo's style, body with why, what changed, how it was verified, and risks. Read the PR back before reporting it.
+3. Push. Open or update the PR: title in the repo's style, body with why, what changed, how it was verified (execute's task and lane tables), risks, and any open findings or gaps. Read the PR back before reporting it.
 
 ## Watch and fix
 
@@ -24,7 +24,7 @@ Repeat up to `max_fix_rounds`:
 2. If red, read the failed logs and classify: caused by this change, already broken on base, infrastructure, or flaky. Prove it, for example by checking the base branch's latest run. Infrastructure or flaky gets one rerun.
 3. The `fixer` fixes real failures on this branch. The `reviewer` checks the fix with `../kstack-review/SKILL.md`. Push, then back to step 1.
 4. Review comments: judge each against the code. Fix the real ones and reply to the rest with a reason. Do not change code just to quiet a bot.
-5. Merge conflicts: rebase if the branch is yours and the resolution is clear. Otherwise stop and report.
+5. Merge conflicts: rebase if the branch is yours and the resolution is clear, then push with `--force-with-lease`. Otherwise stop and report.
 
 Stop when green, when rounds run out, or when a human must decide. Never disable checks, skip tests, or change branch protection to get green. Report a failure that is already on base; do not hide it.
 
@@ -32,7 +32,7 @@ No CI: run the project checks locally and report `NO_CI` with that evidence.
 
 ## Merge and deploy (only when allowed)
 
-Merge with the repo's method once approvals and protection allow it. Read back that it merged; a queued auto-merge is not merged. Then check `deploy_checks` from `.kstack/project.json` against the merge SHA by reading the actual step logs. Fix a broken deploy with a new PR, never by rewriting history.
+Never merge with open verification findings. Merge with the repo's method once approvals and protection allow it. Read back that it merged; a queued auto-merge is not merged. Then check `deploy_checks` from `.kstack/project.json` against the merge SHA by reading the actual step logs. Fix a broken deploy with a new PR, never by rewriting history.
 
 ## Report
 
