@@ -19,6 +19,7 @@ ROLES = ("planner", "plan_critic", "workers", "reviewer",
          "security_reviewer", "verifiers", "fixer")
 CLIS = ("pi", "codex")
 PI_EFFORTS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
+PI_LIST_TIMEOUT = 30  # seconds; `pi --list-models` must not hang validate --check
 
 
 def config_path():
@@ -31,16 +32,29 @@ def config_path():
 def load():
     path = config_path()
     try:
-        return json.loads(path.read_text())
+        cfg = json.loads(path.read_text())
     except FileNotFoundError:
         sys.exit("kstack: no config at %s. Run kstack-setup." % path)
     except json.JSONDecodeError as e:
         sys.exit("kstack: invalid JSON in %s: %s" % (path, e))
+    if not isinstance(cfg, dict):
+        sys.exit("kstack: invalid config %s\n  top level must be a JSON object" % path)
+    return cfg
+
+
+def section(cfg, key):
+    """A top-level section as a dict; malformed sections read as empty (problems() reports them)."""
+    value = cfg.get(key)
+    return value if isinstance(value, dict) else {}
 
 
 def preset_names(cfg, role):
-    value = (cfg.get("roles") or {}).get(role)
+    value = section(cfg, "roles").get(role)
     return value if isinstance(value, list) else ([value] if value else [])
+
+
+def positive_int(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
 
 
 def argv(preset, oneshot=False):
@@ -55,8 +69,15 @@ def argv(preset, oneshot=False):
 
 
 def problems(cfg):
-    out, models = [], cfg.get("models") or {}
+    out = []
+    for key in ("models", "roles", "execution", "finish"):
+        if key in cfg and not isinstance(cfg[key], dict):
+            out.append("%s: must be an object" % key)
+    models = section(cfg, "models")
     for name, p in models.items():
+        if not isinstance(p, dict):
+            out.append("model %s: must be an object" % name)
+            continue
         if p.get("cli") not in CLIS:
             out.append("model %s: cli must be one of %s" % (name, ", ".join(CLIS)))
         for key in ("model", "effort"):
@@ -69,60 +90,105 @@ def problems(cfg):
             out.append("model %s: args must be a list of strings" % name)
     for role in ROLES:
         names = preset_names(cfg, role)
+        if not all(isinstance(n, str) for n in names):
+            out.append("role %s: must be a preset name or a list of preset names" % role)
+            continue
         if not names:
             out.append("role %s: not set" % role)
         out += ["role %s: unknown model '%s'" % (role, n) for n in names if n not in models]
-    value = (cfg.get("execution") or {}).get("max_fails")
-    if not isinstance(value, int) or value < 1:
+    if not positive_int(section(cfg, "execution").get("max_fails")):
         out.append("execution.max_fails: must be a positive integer")
-    finish = cfg.get("finish") or {}
+    finish = section(cfg, "finish")
     if finish.get("target", "pr-green") not in ("pr-green", "merged", "deployed"):
         out.append("finish.target: must be pr-green, merged, or deployed")
+    if not positive_int(finish.get("max_fix_rounds")):
+        out.append("finish.max_fix_rounds: must be a positive integer")
+    for key in ("allow_merge", "allow_deploy"):
+        if key in finish and not isinstance(finish[key], bool):
+            out.append("finish.%s: must be true or false" % key)
     return out
+
+
+def family(model_id):
+    """Warning-only key so `openai/gpt-x` (pi) and `gpt-x` (codex) compare equal. Never used in argv."""
+    return model_id.rsplit("/", 1)[-1].lower()
 
 
 def warnings(cfg):
     models, out = cfg.get("models") or {}, []
 
     def ids(role):
-        return {models[n]["model"] for n in preset_names(cfg, role) if n in models}
+        return {family(models[n]["model"]) for n in preset_names(cfg, role) if n in models}
 
     if ids("planner") & ids("plan_critic"):
         out.append("planner and plan_critic use the same model; the cross-check loses diversity")
     if ids("workers") & (ids("reviewer") | ids("verifiers")):
         out.append("a reviewer or verifier shares a model with a worker; prefer a different one")
-    audit = [models[n]["model"] for n in preset_names(cfg, "verifiers")[:2] if n in models]
+    audit = [family(models[n]["model"]) for n in preset_names(cfg, "verifiers")[:2] if n in models]
     if len(set(audit)) < 2:
         out.append("the two audit lanes run on one model; list two different verifiers first")
     return out
 
 
+def pi_catalog():
+    """Model ids from `pi --list-models`, or (None, reason) when the listing itself is unusable."""
+    env = dict(os.environ, PI_OFFLINE="1")
+    try:
+        res = subprocess.run(["pi", "--list-models"], capture_output=True, text=True,
+                             env=env, timeout=PI_LIST_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return None, "`pi --list-models` timed out after %ss" % PI_LIST_TIMEOUT
+    except OSError as e:
+        return None, "`pi --list-models` could not run (%s)" % e
+    if res.returncode != 0:
+        detail = (res.stderr or "").strip().splitlines()
+        return None, "`pi --list-models` exited %d%s" % (res.returncode, ": " + detail[-1] if detail else "")
+    ids = {"/".join(line.split()[:2]) for line in res.stdout.splitlines() if len(line.split()) >= 2}
+    ids.discard("provider/model")  # header row
+    if not ids:
+        return None, "`pi --list-models` listed no models"
+    return ids, None
+
+
+def codex_catalog():
+    """Codex slug -> supported efforts, or (None, reason) when no readable catalog exists."""
+    toml = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "config.toml"
+    try:
+        match = re.search(r'^model_catalog_json\s*=\s*"([^"]+)"', toml.read_text(), re.M) if toml.exists() else None
+        if not match or not Path(match.group(1)).expanduser().exists():
+            return None, "no Codex model catalog found"
+        catalog = json.loads(Path(match.group(1)).expanduser().read_text())
+        return {m["slug"]: {e["effort"] for e in m.get("supported_reasoning_levels", [])}
+                for m in catalog.get("models", [])}, None
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+        return None, "Codex model catalog unreadable (%s: %s)" % (type(e).__name__, e)
+
+
 def availability(cfg):
     """Check presets against local catalogs. Catalog presence is not proof of access.
 
-    Returns (errors, notes): errors are confirmed-unusable presets, notes are unchecked ones.
+    Returns (errors, notes): errors are presets missing from a working catalog; notes cover
+    presets left unchecked because a catalog was unavailable. An unavailable catalog never
+    marks a preset invalid.
     """
-    out, notes, pi_ids, codex = [], [], None, None
-    if shutil.which("pi"):
-        env = dict(os.environ, PI_OFFLINE="1")
-        res = subprocess.run(["pi", "--list-models"], capture_output=True, text=True, env=env)
-        pi_ids = {"/".join(line.split()[:2]) for line in res.stdout.splitlines() if len(line.split()) >= 2}
-    toml = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "config.toml"
-    match = re.search(r'^model_catalog_json\s*=\s*"([^"]+)"', toml.read_text(), re.M) if toml.exists() else None
-    if match and Path(match.group(1)).expanduser().exists():
-        catalog = json.loads(Path(match.group(1)).expanduser().read_text())
-        codex = {m["slug"]: {e["effort"] for e in m.get("supported_reasoning_levels", [])}
-                 for m in catalog.get("models", [])}
-    for name, p in (cfg.get("models") or {}).items():
-        if p.get("cli") == "pi":
-            if pi_ids is None:
-                notes.append("model %s: pi not installed, not checked" % name)
-            elif p["model"] not in pi_ids:
+    out, notes = [], []
+    presets = (cfg.get("models") or {}).items()
+    clis = {p.get("cli") for _, p in presets}
+    pi_ids = codex = None
+    if "pi" in clis:
+        pi_ids, why = pi_catalog() if shutil.which("pi") else (None, "pi not installed")
+        if pi_ids is None:
+            notes.append("%s; pi presets not checked" % why)
+    if "codex" in clis:
+        codex, why = codex_catalog()
+        if codex is None:
+            notes.append("%s; codex presets not checked" % why)
+    for name, p in presets:
+        if p.get("cli") == "pi" and pi_ids is not None:
+            if p["model"] not in pi_ids:
                 out.append("model %s: %s not in `pi --list-models`" % (name, p["model"]))
-        elif p.get("cli") == "codex":
-            if codex is None:
-                notes.append("model %s: no Codex model catalog found, not checked" % name)
-            elif p["model"] not in codex:
+        elif p.get("cli") == "codex" and codex is not None:
+            if p["model"] not in codex:
                 out.append("model %s: %s not in the Codex catalog" % (name, p["model"]))
             elif codex[p["model"]] and p["effort"] not in codex[p["model"]]:
                 out.append("model %s: effort %s not supported by %s" % (name, p["effort"], p["model"]))
@@ -147,9 +213,11 @@ def main():
 
     if a.action == "show":
         print("config: %s" % config_path())
+        models = section(cfg, "models")
         for role in ROLES:
             for n in preset_names(cfg, role):
-                p = (cfg.get("models") or {}).get(n, {})
+                p = models.get(n) if isinstance(n, str) else None
+                p = p if isinstance(p, dict) else {}
                 print("%-21s %-18s %-6s %s:%s" % (role, n, p.get("cli"), p.get("model"), p.get("effort")))
         print("execution: %s" % json.dumps(cfg.get("execution", {})))
         print("finish: %s" % json.dumps(cfg.get("finish", {})))

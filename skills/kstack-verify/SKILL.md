@@ -1,6 +1,6 @@
 ---
 name: kstack-verify
-description: Prove a change works by running the real app or tool as a user would, and keep the evidence. Use when the user invokes kstack-verify.
+description: Exercise real behavior and retain revision-bound evidence.
 disable-model-invocation: true
 ---
 
@@ -8,12 +8,12 @@ disable-model-invocation: true
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-1. Find how the project runs: `verify` in `.kstack/project.json`, README, package scripts, Makefile, CI. Prefer existing harnesses: e2e tests, scripts, HTTP endpoints, the CLI itself.
-2. Start an isolated instance: its own port, data directory, and test account. Wait until it is usable, not just started. Never touch production data.
-3. Drive the feature the way a user does. Capture the action and the result: output, screenshot, response body, database row, file written.
-4. Check side effects, not just what is visible. As a swarm lane, use the detached checkout at the given SHA, run your one scenario, and judge it by its pass rule. For a base-versus-head lane, run the same scenario on both.
-5. Stop only what you started, by PID. Keep the evidence and report its path.
+1. Pin the revision and scenario with a concrete pass condition. Find the run recipe in `.kstack/project.json`, docs, scripts, or CI. Prefer existing e2e tests, APIs, and CLI drivers.
+2. Use an isolated checkout and instance with its own port, data, and test account. Wait until usable. Never touch production data or edit source as a verification lane.
+3. Drive the scenario as a user would. Capture output, screenshots, responses, and side effects. Judge the stated pass condition, not whether the process started.
+4. For base/head comparison, run comparable behavior on both. If base lacks the feature, record that fact and verify the added behavior and end state on head. Do not invent a baseline or a ratio between different workloads.
+5. Stop only the processes you started, by PID. Retain the evidence outside disposable worktrees.
 
-Report: commands run, revision, what you saw, evidence paths, and what you could not verify and why. Wrong surface or inconclusive is not a pass.
+Report `base/head SHAs | PASS/FAIL/BLOCKED | commands | observations | evidence paths`. Required behavior that cannot run, the wrong interaction method, or inconclusive evidence is BLOCKED. Use N/A only when a check genuinely does not apply, with a reason.
 
-If the project has no recipe, offer to add one to `.kstack/project.json` after a run works.
+After a successful standalone run, offer to save a missing project recipe. Swarm lanes report it to the coordinator instead of editing project files.

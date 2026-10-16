@@ -1,6 +1,6 @@
 ---
 name: kstack-improve
-description: Stop agents repeating the same mistakes in a repo by fixing the cause in code, types, lint, or tests. Use only when the user invokes kstack-improve.
+description: Prevent repeated mistakes with structure and checks.
 disable-model-invocation: true
 ---
 
@@ -15,6 +15,6 @@ Shared rules: read `../kstack/SKILL.md` first.
    3. A test of the behavior.
    4. A line in `AGENTS.md`, only for judgment calls.
 3. Prove each new check fails on a real past mistake and passes on correct code.
-4. One commit per class, on its own branch, separate from feature work. Publish only through `kstack-finish`.
+4. Keep each class a separate commit in this improvement job, not unrelated feature work. Use the assigned task branch. Publish only through `kstack-finish`.
 
 Report: each class, its evidence, the level chosen, and why a higher level did not work.

@@ -1,6 +1,6 @@
 ---
 name: kstack-setup
-description: Choose the CLI, model, and effort kstack uses for each role, and record project commands. Use when the user invokes kstack-setup.
+description: Choose the CLI, model, and effort for each role.
 disable-model-invocation: true
 ---
 
@@ -13,9 +13,9 @@ Shared rules: read `../kstack/SKILL.md` first.
 Path: `$KSTACK_CONFIG`, else `$XDG_CONFIG_HOME/kstack/config.json`, else `~/.config/kstack/config.json`. Shape: `references/config.example.json`.
 
 - `models`: named presets. Each has `cli` (`pi` or `codex`), exact `model`, `effort`, and optional `args` (for example `["--yolo"]`).
-- `roles`: a preset name per role: `planner`, `plan_critic`, `workers`, `reviewer`, `security_reviewer`, `verifiers`, `fixer`. `workers` and `verifiers` are lists. Tasks rotate through `workers`, one task per worker, never the same task twice. Verification lanes rotate through `verifiers`; the first two run the audit lanes.
-- `execution`: `max_fails` (review FAILs before a task is blocked). There is no agent cap.
-- `finish`: `target` (`pr-green`, `merged`, or `deployed`), `max_fix_rounds`, `allow_merge`, `allow_deploy`.
+- `roles`: a preset name per role: `planner`, `plan_critic`, `workers`, `reviewer`, `security_reviewer`, `verifiers`, `fixer`. `workers` and `verifiers` are lists. Tasks rotate through the `workers` model pool, one agent per ready task. Pool size is not a concurrency limit. Never run competing implementations of a task; retries wait for its previous writer to stop. Verification lanes use `verifiers`; reuse a qualifying one-task review as one audit rather than spawning another.
+- `execution.max_fails` and `finish.max_fix_rounds`: positive integer retry limits, not booleans. There is no worker cap.
+- `finish.target`: `pr-green`, `merged`, or `deployed`. `allow_merge` and `allow_deploy` are JSON booleans; omitted permissions mean false.
 
 ## Steps
 
@@ -23,7 +23,7 @@ Path: `$KSTACK_CONFIG`, else `$XDG_CONFIG_HOME/kstack/config.json`, else `~/.con
 2. Find choices. Pi: `pi --list-models`. Codex: the catalog named by `model_catalog_json` in `~/.codex/config.toml`, else ask the user. Use an effort the model supports.
 3. Change only what the user asked. A refresh keeps existing choices and flags missing ones.
 4. Prefer different models for planner and plan_critic, for the first two verifiers, and between workers and the reviewer or verifiers.
-5. Show the diff, write the file, run `python3 scripts/kstack-models validate --check`. Fix every error.
+5. Show the diff, write the file, run `python3 scripts/kstack-models validate --check`. Fix every error. Catalog warnings mean availability is unchecked, not proven; do not replace a model just because discovery failed.
 6. Tell the user changes apply to new agents. Running agents keep their model.
 
 ## Project config (optional)

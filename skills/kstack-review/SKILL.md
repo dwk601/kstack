@@ -1,6 +1,6 @@
 ---
 name: kstack-review
-description: Independently review a plan, diff, or PR and return PASS, FAIL, or BLOCKED with evidence. Use when the user invokes kstack-review.
+description: Review plans and code independently with evidenced verdicts.
 disable-model-invocation: true
 ---
 
@@ -8,36 +8,23 @@ disable-model-invocation: true
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-You are not the author. Do not edit source or tests. Assume the goal is right and test the execution.
+Never review your own implementation. If you authored it, dispatch a fresh configured reviewer. Do not edit source or tests.
 
 ## Modes
 
-- **plan**: check the plan against the code. Missing or extra scope, wrong facts, file overlap, false or missing dependencies, serial work that could be parallel, acceptance no one can check.
-- **code** (default): review an exact SHA against its base.
-- **security**: auth and permissions, input reaching shell, SQL, or HTML, secrets in code or logs, migrations, data exposure. Trace each input path.
-- **audit**: a verification-swarm lane on the combined diff base..SHA. Worker reports are claims, not facts; rerun what they say passed. Stay on your assigned focus: cross-task behavior, scope against the request, or regressions against base. Not per-task style.
+- **plan**: check scope, code facts, file overlap, dependencies, parallelism, and checkable acceptance criteria. No code revision is required yet.
+- **code**: review an exact base/head pair against the task.
+- **security**: trace authorization, untrusted input, secrets, migrations, and data exposure.
+- **audit**: check the combined diff with one assigned focus: scope, cross-task behavior, or regressions. Inspect evidence rather than trusting summaries; reproduce the claims relevant to that focus.
 
-## Code and audit review
+## Review the code
 
-1. Record base and head SHA. Run the task's check and lint at that SHA. If the environment fails, return BLOCKED with the error.
-2. Read the diff against the acceptance criteria.
-3. Look past the diff: callers, stored data, API and wire contracts, config, other readers of the same state. Find the one fact the change is safe because of, and confirm it by running code when you can.
-4. Check correctness and edge cases, root cause versus symptom patch, needless complexity, and whether required behavior is proven.
+1. Record base/head SHAs. Code reviews run the task checks and lint. Security reviews and audits inspect gates evidence and run focused probes, not unrelated suites again. An unavailable required check is BLOCKED.
+2. Read the diff against acceptance criteria, then follow callers, stored data, contracts, config, and shared state beyond the changed files.
+3. Check correctness, edge cases, root cause, unnecessary complexity, and whether the evidence proves the behavior. Confirm the assumptions that make the change safe.
 
 ## Verdict
 
-```
-PASS
-```
-or
-```
-FAIL
-- [critical|major] file:line | criterion | what breaks | evidence | fix
-```
-or
-```
-BLOCKED
-- what could not run and the error
-```
+Return `task or lane | base/head SHAs | PASS/FAIL/BLOCKED | checks | evidence`. Plan reviews identify the reviewed in-chat plan instead of SHAs.
 
-List every finding you can prove in one pass. Style points go under `Notes` and never block. No findings is a valid review. A missing test is a FAIL only when the repo tests that area and the behavior is otherwise unproven.
+For FAIL, list every proven finding in one pass: severity, file:line, broken criterion, evidence, and fix. BLOCKED names the missing check and error. Style notes do not block. A missing test is a failure only when the repo tests that area and behavior is otherwise unproven.

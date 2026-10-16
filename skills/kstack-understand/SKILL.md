@@ -1,6 +1,6 @@
 ---
 name: kstack-understand
-description: Explain how part of a codebase works and why it is shaped that way, with evidence. Use when the user invokes kstack-understand.
+description: Explain how and why code works, with evidence.
 disable-model-invocation: true
 ---
 

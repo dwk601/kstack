@@ -1,12 +1,12 @@
 ---
 name: kstack-debug
-description: Find a bug's root cause with runtime evidence and fix it. Use when the user invokes kstack-debug or a kstack worker hits a bug.
+description: Diagnose bugs from runtime evidence and fix the cause.
 disable-model-invocation: true
 ---
 
 # kstack debug
 
-Shared rules: read `../kstack/SKILL.md` first.
+Shared rules: read `../kstack/SKILL.md` first. Standalone fixes enter Plan and Execute; assigned workers use the steps below. Diagnosis-only requests never edit source; use runtime probes and report if source instrumentation is required.
 
 1. Reproduce it where it happens: UI, CLI, API, or job. If it will not reproduce, narrow the conditions or add logging until it does. If you cannot reach that surface, say why.
 2. List hypotheses. Test the one that cuts the most: logs, a probe script, `git bisect`, a debugger. Drop what the evidence rules out.

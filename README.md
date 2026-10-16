@@ -19,7 +19,7 @@ Install all skills together; they reference each other by relative path. Needs `
 | `/skill:kstack <task>` | `$kstack <task>` | Plan, then execute. Stops before publishing. |
 | `/skill:kstack-finish` | `$kstack-finish` | Push, open the PR, fix until green. |
 
-All skills are explicit only. They never load on their own.
+All entry points are explicit-only. Invoked workflows read the supporting skills they need. Diagnosis and explanation stay read-only; code-changing requests use Plan and Execute.
 
 ## Skills
 
@@ -47,6 +47,16 @@ python3 skills/kstack-setup/scripts/kstack-models validate --check
 python3 skills/kstack-setup/scripts/kstack-models cmd workers --index 2
 python3 skills/kstack-setup/scripts/kstack-models cmd verifiers --index 1
 ```
+
+## Checks
+
+Run the offline helper tests from this repository:
+
+```sh
+python3 -B -m unittest discover -s tests -v
+```
+
+Catalog validation and skill discovery do not prove an end-to-end Herdr run.
 
 ## Not included
 

@@ -1,6 +1,6 @@
 ---
 name: kstack-execute
-description: Execute a kstack plan. Workers build the tasks in parallel with per-task review, then a verification swarm proves the result. Use when the user invokes kstack-execute or after kstack-plan.
+description: Build reviewed tasks, integrate, and verify the result.
 disable-model-invocation: true
 ---
 
@@ -8,54 +8,50 @@ disable-model-invocation: true
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-Two fan-outs. Workers build the tasks, then a verification swarm that wrote none of the code proves the result. Input is the plan in this conversation. If it is gone, rebuild it from the request, the code, and existing branches. Never invent one. No push, PR, or deploy here.
-
-There is no agent cap. Inside Herdr, give the job its own tab (`herdr tab create --label kstack-<job> --no-focus`, root pane in its JSON), start every agent of a fan-out at once, and split its panes (`herdr pane split <pane> --direction right|down --no-focus --cwd <worktree>`) in alternating directions so they stay usable. Outside Herdr, run the same agents one at a time in the same order.
+Use the plan in this conversation. If lost, reconstruct it from the request, code, and recorded work. No push here. There is no worker cap; dispatch every ready task, using the shared collection rules.
 
 ## 1. Frame
 
-- Done means every acceptance criterion is met on `kstack/<job>` and every verification lane passes, or the gap is reported.
-- Record the base SHA. Create the integration branch `kstack/<job>` from it. Run the full checks on base and note failures. A task must not add new ones.
-- Keep one state table only you edit (a scratch file outside the repo): task, worker, branch, head SHA, verdict, then one row per lane.
+- Resolve the requested or project-configured base, otherwise the repository's default branch. Record its SHA, create `kstack/<job>` from it, and run the baseline checks. Preserve existing job state on resume.
+- Keep one coordinator-owned state table outside the repo: task, status, agent, branch, base/head SHA, verdict, evidence. Add lane results as they arrive. A baseline failure is not a new task failure; report it separately.
 
 ## 2. Build
 
-- Start a worker for every ready task. A task is ready when its dependencies are merged into `kstack/<job>`.
-- Each worker gets its own worktree and branch from `kstack/<job>`, and its model from `kstack-models cmd workers --index <task-number>`.
-- Every brief stands alone: goal, owned files, acceptance criteria, check command, base SHA, dependency results, report format. Never send a bare "continue". Never run one task twice to pick a winner.
-- Worker: implement, run the check, commit. Use `../kstack-debug/SKILL.md` for bugs, `../kstack-perf/SKILL.md` for speed, and `../kstack-verify/SKILL.md` for user-facing behavior. Report `task | SHA | files | check + result | assumptions`.
-- On timeout, read the agent's output before resending.
+- Ready means dependencies are integrated. Each task gets its own worktree and branch from `kstack/<job>`, with `python3 "$MODELS" cmd workers --index <task-number>`.
+- Briefs stand alone: goal, owned files, acceptance criteria, check command, base SHA, dependency results, report format. No bare "continue" or competing implementations of one task.
+- Workers implement, check, and commit. Use `../kstack-debug/SKILL.md` for bugs, `../kstack-perf/SKILL.md` for speed, and `../kstack-verify/SKILL.md` for behavior. Report `task | SHA | files | check + result | assumptions`.
+- A missing or incomplete report gets one fresh attempt, only after the old writer has stopped. A second miss is a gap; skip its dependents and preserve the work.
 
 ## 3. Review each task
 
-- As each worker reports, the `reviewer` reviews that SHA with `../kstack-review/SKILL.md` in code mode. The worker leaves the worktree untouched until the verdict.
-- FAIL: the worker fixes every item and resubmits. After `max_fails` FAILs, block the task and skip its dependents.
-- BLOCKED: fix the environment and review again. It is not a pass and not a strike.
-- High-risk task: after PASS, the `security_reviewer` reviews the same SHA. Merge needs both.
-- A worker that dies, or reports without a SHA and check result, gets one fresh restart with the full brief. A second miss is a gap. A gap is not a pass.
+- The `reviewer` uses `../kstack-review/SKILL.md` on the frozen base/head pair. For a one-task job, include scope and regression audit so this review can also fill one final audit lane.
+- FAIL returns to the worker. After `max_fails`, block the task and skip dependents. BLOCKED is not a strike; retry only after the environment is repaired, otherwise report partial.
+- High-risk tasks also need `security_reviewer` PASS on the same revision. Reviewers never fix code.
 
 ## 4. Integrate
 
-- After PASS the worker is done and you own its branch. Merge passed tasks one at a time: rebase onto `kstack/<job>`, rerun the check, fast-forward. If the rebase changed code, review again. Then start the tasks that just became ready.
-- When nothing is left to start, run the full checks on `kstack/<job>` and compare with base. Its head is the code-ready SHA.
+- After review, pause the worker and integrate serially: rebase, rerun the task check, then fast-forward. Conflicts go back to the worker; review any resolution before integration. Unlock dependents only after integration.
+- Finish dispatch and collection: every task must be integrated, blocked, or skipped, and every started agent accounted for. Only then freeze the integration head as the code-ready SHA. Unfinished work makes the result partial.
 
 ## 5. Verification swarm
 
-Fan out independent lanes at the code-ready SHA, each in its own detached worktree (`git worktree add --detach <path> <sha>`). Lanes never edit code. A lane's model comes from `kstack-models cmd verifiers --index <lane>`. The audit lanes take indexes 0 and 1, so they run on different models.
+This section also verifies an existing branch for Finish without rebuilding it. Supply the request, base/head SHAs, acceptance criteria, scenarios with pass conditions, check commands, and any prior reports. Infer missing scenarios from the diff and repo; never invent a previous PASS.
 
-| Lane | How many | Does |
-|---|---|---|
-| Audit | 2 or more, each with its own focus | `../kstack-review/SKILL.md` audit mode on base..SHA |
-| Gates | 1 | Full checks, lint, and typecheck at the SHA. Run it yourself; no agent needed |
-| Live | One per user-visible behavior in the plan | `../kstack-verify/SKILL.md`: one scenario, saved evidence, pass rule. One lane runs the main scenario on base and head |
-| Perf | Only when the plan has a speed target | Measure base and head the `../kstack-perf/SKILL.md` way. Measure only; a miss is a finding |
+Run independent lanes at the frozen head in detached worktrees (`git worktree add --detach <path> <sha>`). Give each the relevant evidence and a distinct focus. Verifiers never edit source. Select models with `python3 "$MODELS" cmd verifiers --index <lane>`.
 
-Size the swarm to the change. Skip live lanes only when the project cannot run, and say so.
+| Lane | Required evidence |
+|---|---|
+| Audit | Two independent focused reviews using `../kstack-review/SKILL.md`. Prefer different models. |
+| Gates | Run the full checks, lint, and typecheck once at this head; the coordinator can do this. |
+| Live | `../kstack-verify/SKILL.md` for each changed user-visible behavior, with one main scenario compared against base. |
+| Perf | Only for a speed target: measure using `../kstack-perf/SKILL.md`, without changing code. |
 
-- Each lane reports PASS, FAIL, or BLOCKED with evidence and the SHA. Drop a report without the SHA and respawn that lane once. A second miss is a gap.
-- Clean only when every lane passes. A defect base already has is recorded against base and does not gate the job.
-- Every proven finding, however a lane labeled it, becomes a repair task through steps 2 to 4. One repair round. Then one verifier at the new head reruns the gates, the failed lanes, and every lane the repair could affect. Run a full swarm again only for new behavior or a large new diff.
+For a one-task job, reuse its task review as one audit only when the base/head pair and audit scope match. Choose the other verifier from the pool, preferably on a different model. Reuse gates only for the same SHA, commands, and environment; audits check their focused claims rather than rerunning unrelated suites.
+
+- Every required lane returns `base SHA | head SHA | PASS/FAIL/BLOCKED | commands | evidence`. Missing evidence gets one retry, then a gap. An inapplicable check needs a reason; an unavailable required check stays BLOCKED. A gap never counts as PASS.
+- Existing defects remain recorded against base unless the change copies, worsens, or newly exposes them. During Execute, new defects become repair tasks through steps 2-4 with one swarm repair round, then stop partial if anything remains. When verifying for Finish, return findings to its fixer loop instead; only its `finish.max_fix_rounds` budget applies.
+- After small repairs or a rebase, one independent verifier at the new head checks the diff, reruns gates and affected or previously failed scenarios, and records which earlier results remain valid and why. New behavior or a large diff requires the full swarm again, within the same repair budget.
 
 ## 6. Report
 
-Two tables: acceptance criterion, task, SHA, check result, verdict; and lane, SHA, verdict, evidence path. Then one line per open issue with evidence, then gaps, dropouts, blocked and skipped tasks, and checks not run. Keep unmerged work. Close only this job's agents, tab, and worktrees.
+Report complete only when acceptance criteria and all required lanes pass. Otherwise report partial. Keep task-to-SHA/check/verdict and lane-to-evidence tables in the job report, with open findings and checks not run. Preserve evidence and unmerged work; clean up only this job's idle agents and disposable worktrees.
