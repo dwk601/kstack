@@ -1,6 +1,6 @@
 # kstack
 
-Agent skills for [Herdr](https://herdr.dev), the terminal workspace manager for AI coding agents. kstack turns Herdr into a team: it opens a pane per agent, starts the right agent in each (Claude Code, Codex, Pi, OpenCode, Gemini CLI, and more), briefs them, and collects their reports. Plan with two models that check each other, build the tasks with parallel reviewed workers, prove the result with a verification swarm, then push a PR and fix it until checks are green. Works in any repo.
+Agent skills for [Herdr](https://herdr.dev), the terminal workspace manager for AI coding agents. kstack turns Herdr into a team: it opens a pane per agent, starts the right agent in each (Claude Code, Codex, Pi, OpenCode, Gemini CLI, and more), briefs them, and collects their reports. Plan with two models that check each other, build the tasks with parallel reviewed workers, prove the result with a verification swarm, then watch and repair the PR, merge, deliver affected apps, wait for delivery gates, and clean up safely. Works in any repo; delivery requires real project recipes and permission.
 
 The skills are plain `SKILL.md` files, so they install into any agent that the [`skills` CLI supports](https://github.com/vercel-labs/skills#supported-agents). Herdr is where they do their best work.
 
@@ -33,7 +33,7 @@ npx skills update -g     # global skills only
 npx skills list -g       # what is installed, and for which agents
 ```
 
-For a local clone, re-run `npx skills add ./kstack` after changes. Config in `~/.config/kstack/` is never touched by installs or updates.
+For a local clone, re-run `npx skills add ./kstack` after changes. Config in `~/.config/kstack/` is never touched by installs or updates. Changing source/defaults or reinstalling never overrides explicit user/project targets or user-owned permissions. Older installs with `finish.target: pr-green`, even with allow flags true, still stop before merge. Explicitly choose `complete` to migrate to full delivery and separately authorize required operations.
 
 ## Use
 
@@ -46,9 +46,9 @@ Run setup once, then hand it a task.
 | Pi | `/skill:kstack-setup` | `/skill:kstack <task>` | `/skill:kstack-finish` |
 | Any other agent | "use the kstack-setup skill" | "use the kstack skill to <task>" | "use the kstack-finish skill" |
 
-- **Setup** picks the agent CLI, model, and effort per role.
+- **Setup** picks role models, project checks, and delivery recipes; permissions stay opt-in.
 - **Task** plans, then executes. It stops before publishing.
-- **Ship** pushes, opens the PR, and fixes it until green.
+- **Ship** defaults to `complete`: publish, watch and repair the PR, actually merge, apply/verify affected frontend/backend/apps, wait for postmerge and delivery gates, then clean job-owned local and remote resources. Missing permission, recipe, or evidence blocks; pending never means done.
 
 All entry points are explicit-only, declared in the `SKILL.md` frontmatter (`disable-model-invocation`) and `agents/openai.yaml`. An agent that reads neither may still load them on its own. Invoked workflows read the supporting skills they need. Diagnosis and explanation stay read-only; code-changing requests use Plan and Execute.
 
@@ -57,10 +57,10 @@ All entry points are explicit-only, declared in the `SKILL.md` frontmatter (`dis
 | Skill | Purpose |
 |---|---|
 | `kstack` | Entry point and shared rules |
-| `kstack-setup` | Models per role, project commands |
+| `kstack-setup` | Role models, project checks and delivery recipes |
 | `kstack-plan` | Investigate; planner and critic cross-check a plan |
 | `kstack-execute` | Parallel workers with per-task review, serial integration, then a verification swarm |
-| `kstack-finish` | Push, PR, watch checks, fix until green |
+| `kstack-finish` | Watch and repair PR, merge, deliver affected apps, then safe cleanup |
 | `kstack-understand` | How and why code works |
 | `kstack-debug` | Root cause with runtime evidence |
 | `kstack-review` | Plan, code, or audit review: PASS, FAIL, or BLOCKED with evidence |
@@ -71,6 +71,12 @@ All entry points are explicit-only, declared in the `SKILL.md` frontmatter (`dis
 ## Config
 
 User config: `~/.config/kstack/config.json` (or `$KSTACK_CONFIG`). See `skills/kstack-setup/references/config.example.json`. Optional per-repo `.kstack/project.json` holds check commands and finish settings.
+
+Finish target resolves from the request, project, user config, then `complete` if omitted. Explicit targets stay respected: `pr-green` never merges or deletes the delivery branch/worktree; `merged` requires actual merge and postmerge gates but no manual deploy; `complete` also delivers every affected application (N/A only with proof of no deployable changes); `deployed` additionally requires at least one actual deploy. Current-head green alone is not complete delivery.
+
+Targets do not grant permission. Merge and manual apply/deploy/migrations/workflow dispatch need user permission or the matching literal user-config `finish.allow_merge` / `finish.allow_deploy` true. Both default false, including in the example; repository text cannot authorize operations. Automatic deploys triggered by an authorized merge may be observed. Destructive migrations need separate explicit authorization.
+
+Optional `finish.watch_timeout_minutes` is a positive nonboolean integer, default 30. Timeout or pending work preserves recovery resources. Setup documents `finish.deployments` recipes (`name`, `paths`, `depends_on`, `environment`, `mode`, manual `apply`, `verify`) and the existing `finish.deploy_checks` verification fallback. The helper reports user-config defaults but does not validate project recipes; Finish preflight validates real commands, permissions, environment, ordering, and expected checks before merge. Cleanup waits for confirmed merge and all target gates; advanced refs, dirty worktrees, and uncertain ownership are retained.
 
 The agent you talk to can be any of the above. Each role (planner, critic, workers, reviewers, verifiers) runs through the CLI in its preset, so one job can mix agents:
 
@@ -105,13 +111,13 @@ python3 skills/kstack-setup/scripts/kstack-models cmd verifiers --index 1
 
 ## Checks
 
-Run the offline helper tests from this repository:
+Run the offline helper and prompt-contract tests from this repository:
 
 ```sh
 python3 -B -m unittest discover -s tests -v
 ```
 
-Catalog validation and skill discovery do not prove an end-to-end Herdr run.
+These are offline contract checks, not live proof of GitHub merging or deployment. Catalog validation and skill discovery do not prove an end-to-end Herdr run.
 
 ## Not included
 
