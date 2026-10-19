@@ -154,9 +154,6 @@ def warnings(cfg):
         out.append("planner and plan_critic use the same model; the cross-check loses diversity")
     if ids("workers") & (ids("reviewer") | ids("verifiers")):
         out.append("a reviewer or verifier shares a model with a worker; prefer a different one")
-    audit = [family(models[n]["model"]) for n in preset_names(cfg, "verifiers")[:2] if n in models]
-    if len(set(audit)) < 2:
-        out.append("the two audit lanes run on one model; list two different verifiers first")
     return out
 
 

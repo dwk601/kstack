@@ -24,7 +24,7 @@ Path: `$KSTACK_CONFIG`, else `$XDG_CONFIG_HOME/kstack/config.json`, else `~/.con
 1. Show the current config: `python3 scripts/kstack-models show`. If none exists, start from the example.
 2. Find choices. Pi: `pi --list-models`. Codex: the catalog named by `model_catalog_json` in `~/.codex/config.toml`, else ask the user. Claude Code: an alias (`opus`, `sonnet`) or a full model name. Custom: the agent's own model list or docs. Use an effort the model supports.
 3. Change only what the user asked. A refresh keeps existing choices and flags missing ones.
-4. Prefer different models for planner and plan_critic, for the first two verifiers, and between workers and the reviewer or verifiers.
+4. Prefer different models for planner and plan_critic, and between workers and the reviewer or verifiers. `verifiers` may list a single model; every lane then runs on it in its own context.
 5. Show the diff, write the file, run `python3 scripts/kstack-models validate --check`. Fix every error. Catalog warnings mean availability is unchecked, not proven; do not replace a model just because discovery failed.
 6. Tell the user changes apply to new agents. Running agents keep their model.
 

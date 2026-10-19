@@ -41,12 +41,12 @@ Run independent lanes at the frozen head in detached worktrees (`git worktree ad
 
 | Lane | Required evidence |
 |---|---|
-| Audit | Two independent focused reviews using `../kstack-review/SKILL.md`. Prefer different models. |
+| Audit | Two independent focused reviews using `../kstack-review/SKILL.md`, each in its own context. They may share one model. |
 | Gates | Run the full checks, lint, and typecheck once at this head; the coordinator can do this. |
 | Live | `../kstack-verify/SKILL.md` for each changed user-visible behavior, with one main scenario compared against base. |
 | Perf | Only for a speed target: measure using `../kstack-perf/SKILL.md`, without changing code. |
 
-For a one-task job, reuse its task review as one audit only when the base/head pair and audit scope match. Choose the other verifier from the pool, preferably on a different model. Reuse gates only for the same SHA, commands, and environment; audits check their focused claims rather than rerunning unrelated suites.
+For a one-task job, reuse its task review as one audit only when the base/head pair and audit scope match. Choose the other verifier from the pool; a one-model pool is fine. Reuse gates only for the same SHA, commands, and environment; audits check their focused claims rather than rerunning unrelated suites.
 
 - Every required lane returns `base SHA | head SHA | PASS/FAIL/BLOCKED | commands | evidence`. Missing evidence gets one retry, then a gap. An inapplicable check needs a reason; an unavailable required check stays BLOCKED. A gap never counts as PASS.
 - Existing defects remain recorded against base unless the change copies, worsens, or newly exposes them. During Execute, new defects become repair tasks through steps 2-4 with one swarm repair round, then stop partial if anything remains. When verifying for Finish, return findings to its fixer loop instead; only its `finish.max_fix_rounds` budget applies.

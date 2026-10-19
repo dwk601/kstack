@@ -260,14 +260,17 @@ class WarningsTest(unittest.TestCase):
         w = km.warnings(c)
         self.assertIn("planner and plan_critic use the same model; the cross-check loses diversity", w)
         self.assertIn("a reviewer or verifier shares a model with a worker; prefer a different one", w)
-        self.assertIn("the two audit lanes run on one model; list two different verifiers first", w)
+        self.assertNotIn("the two audit lanes run on one model; list two different verifiers first", w)
         r = run_cli(c, "validate")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(r.stdout.count("warning:"), 3)
+        self.assertEqual(r.stdout.count("warning:"), 2)
 
-    def test_single_verifier_warns(self):
-        self.assertIn("the two audit lanes run on one model; list two different verifiers first",
-                      km.warnings(cfg(roles__verifiers=["critic"])))
+    def test_single_verifier_is_allowed_without_warning(self):
+        c = cfg(roles__verifiers=["critic"])
+        self.assertEqual(km.problems(c), [])
+        self.assertEqual(km.warnings(c), [])
+        out = [run_cli(c, "cmd", "verifiers", "--index", str(i)).stdout.strip() for i in range(2)]
+        self.assertEqual(out, ["pi --model prov/critic-1:high"] * 2)
 
     def test_equivalent_ids_across_clis_warn_without_rewrite(self):
         c = cfg(models__critic={"cli": "pi", "model": "openai/GPT-Deep", "effort": "high"})
