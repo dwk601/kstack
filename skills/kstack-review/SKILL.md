@@ -19,7 +19,7 @@ Never review your own implementation. If you authored it, dispatch a fresh confi
 ## Review the code
 
 1. Record base/head SHAs. Code reviews run the task checks and lint. Audits inspect gates evidence and run focused probes, not unrelated suites again. An unavailable required check is BLOCKED.
-2. Read the diff against acceptance criteria, then follow callers, stored data, contracts, config, and shared state beyond the changed files.
+2. Read the diff against acceptance criteria, then follow callers, stored data, contracts, config, and shared state beyond the changed files. Search the repo for the coding standards that apply, and cite the rule for any finding that rests on one.
 3. Check correctness, edge cases, root cause, unnecessary complexity, and whether the evidence proves the behavior. Confirm the assumptions that make the change safe.
 
 ## Verdict
