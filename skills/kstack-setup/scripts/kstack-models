@@ -24,6 +24,8 @@ CLIS = ("pi", "codex", "claude", "custom")
 PI_EFFORTS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
 CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 PI_LIST_TIMEOUT = 30  # seconds; `pi --list-models` must not hang validate --check
+FINISH_TARGETS = ("complete", "pr-green", "merged", "deployed")
+DEFAULT_WATCH_TIMEOUT_MINUTES = 30
 
 
 def config_path():
@@ -50,6 +52,14 @@ def section(cfg, key):
     """A top-level section as a dict; malformed sections read as empty (problems() reports them)."""
     value = cfg.get(key)
     return value if isinstance(value, dict) else {}
+
+
+def effective_finish(cfg):
+    """User-config defaults only; project recipes and permissions need agent preflight."""
+    finish = {"target": "complete", "watch_timeout_minutes": DEFAULT_WATCH_TIMEOUT_MINUTES,
+              "allow_merge": False, "allow_deploy": False}
+    finish.update(section(cfg, "finish"))
+    return finish
 
 
 def preset_names(cfg, role):
@@ -128,11 +138,13 @@ def problems(cfg):
         out += ["role %s: unknown model '%s'" % (role, n) for n in names if n not in models]
     if not positive_int(section(cfg, "execution").get("max_fails")):
         out.append("execution.max_fails: must be a positive integer")
-    finish = section(cfg, "finish")
-    if finish.get("target", "pr-green") not in ("pr-green", "merged", "deployed"):
-        out.append("finish.target: must be pr-green, merged, or deployed")
+    finish = effective_finish(cfg)
+    if finish["target"] not in FINISH_TARGETS:
+        out.append("finish.target: must be complete, pr-green, merged, or deployed")
     if not positive_int(finish.get("max_fix_rounds")):
         out.append("finish.max_fix_rounds: must be a positive integer")
+    if not positive_int(finish["watch_timeout_minutes"]):
+        out.append("finish.watch_timeout_minutes: must be a positive integer")
     for key in ("allow_merge", "allow_deploy"):
         if key in finish and not isinstance(finish[key], bool):
             out.append("finish.%s: must be true or false" % key)
@@ -250,7 +262,7 @@ def main():
                 p = p if isinstance(p, dict) else {}
                 print("%-21s %-18s %-6s %s:%s" % (role, n, p.get("cli"), p.get("model"), p.get("effort")))
         print("execution: %s" % json.dumps(cfg.get("execution", {})))
-        print("finish: %s" % json.dumps(cfg.get("finish", {})))
+        print("finish: %s" % json.dumps(effective_finish(cfg)))
         return 0
 
     errs = problems(cfg)

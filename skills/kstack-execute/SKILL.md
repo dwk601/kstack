@@ -54,4 +54,4 @@ For a one-task job, reuse its task review as one audit only when the base/head p
 
 ## 6. Report
 
-Report complete only when acceptance criteria and all required lanes pass. Otherwise report partial. Keep task-to-SHA/check/verdict and lane-to-evidence tables in the job report, with open findings and checks not run. Preserve evidence and unmerged work; clean up only this job's idle agents and disposable worktrees.
+Report complete only when acceptance criteria and all required lanes pass. Otherwise report partial. Keep task-to-SHA/check/verdict and lane-to-evidence tables in the job report, with open findings and checks not run. Preserve the unmerged delivery branch and worktree for Finish. Execute may stop this job's idle agents and remove only its clean, idle, disposable verifier worktrees after saving evidence outside them. Delivery branch/worktree cleanup belongs to Finish only after confirmed merge and all requested delivery gates pass.

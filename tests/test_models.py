@@ -76,7 +76,12 @@ class ProblemsTest(unittest.TestCase):
 
     def test_example_config_is_shape_valid(self):
         example = SCRIPT.parent.parent / "references" / "config.example.json"
-        self.assertEqual(km.problems(json.loads(example.read_text())), [])
+        example_cfg = json.loads(example.read_text())
+        self.assertEqual(km.problems(example_cfg), [])
+        self.assertEqual(example_cfg["finish"]["target"], "complete")
+        self.assertEqual(example_cfg["finish"]["watch_timeout_minutes"], 30)
+        self.assertIs(example_cfg["finish"]["allow_merge"], False)
+        self.assertIs(example_cfg["finish"]["allow_deploy"], False)
 
     def test_allow_flags_must_be_boolean_when_present(self):
         for key in ("allow_merge", "allow_deploy"):
@@ -119,9 +124,44 @@ class ProblemsTest(unittest.TestCase):
         self.assertIn("role fixer: unknown model 'nope'", km.problems(cfg(roles__fixer="nope")))
 
     def test_target_still_validated(self):
-        self.assertIn("finish.target: must be pr-green, merged, or deployed",
-                      km.problems(cfg(finish__target="shipped")))
+        for bad in ("shipped", "", None, True, 1, [], {}):
+            with self.subTest(target=bad):
+                self.assertIn("finish.target: must be complete, pr-green, merged, or deployed",
+                              km.problems(cfg(finish__target=bad)))
         self.assertEqual(km.problems(cfg(finish__target=DELETE)), [])
+
+    def test_complete_and_each_legacy_target_accepted(self):
+        for target in ("complete", "pr-green", "merged", "deployed"):
+            with self.subTest(target=target):
+                c = cfg(finish__target=target)
+                self.assertEqual(km.problems(c), [])
+                self.assertEqual(run_cli(c, "validate").returncode, 0)
+
+    def test_watch_timeout_optional_positive_non_boolean_integer(self):
+        msg = "finish.watch_timeout_minutes: must be a positive integer"
+        for bad in (True, False, 0, -1, 1.5, 2.0, "30", None, [], {}):
+            with self.subTest(timeout=bad):
+                c = cfg(finish__watch_timeout_minutes=bad)
+                self.assertIn(msg, km.problems(c))
+                r = run_cli(c, "validate")
+                self.assertEqual(r.returncode, 1)
+                self.assertIn(msg, r.stderr)
+        for good in (DELETE, 1, 30, 120):
+            self.assertEqual(km.problems(cfg(finish__watch_timeout_minutes=good)), [])
+
+    def test_effective_defaults_do_not_mutate_or_grant_permissions(self):
+        c = cfg(finish__target=DELETE, finish__allow_merge=DELETE, finish__allow_deploy=DELETE)
+        original = copy.deepcopy(c)
+        finish = km.effective_finish(c)
+        self.assertEqual(finish["target"], "complete")
+        self.assertEqual(finish["watch_timeout_minutes"], 30)
+        self.assertIs(finish["allow_merge"], False)
+        self.assertIs(finish["allow_deploy"], False)
+        self.assertEqual(c, original)
+        self.assertEqual(km.effective_finish({}), {
+            "target": "complete", "watch_timeout_minutes": 30,
+            "allow_merge": False, "allow_deploy": False,
+        })
 
     def test_existing_preset_checks_kept(self):
         errs = km.problems(cfg(models__builder={"cli": "bash", "model": "", "effort": "huge", "args": "x"}))
@@ -210,6 +250,34 @@ class MoreAgentsTest(unittest.TestCase):
 
 
 class CmdCliTest(unittest.TestCase):
+    def shown_finish(self, config):
+        r = run_cli(config, "show")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        line = next(line for line in r.stdout.splitlines() if line.startswith("finish: "))
+        return json.loads(line[len("finish: "):])
+
+    def test_show_reports_missing_target_and_timeout_defaults(self):
+        c = cfg(finish__target=DELETE, finish__allow_merge=DELETE, finish__allow_deploy=DELETE)
+        self.assertEqual(km.problems(c), [])
+        self.assertEqual(run_cli(c, "validate").returncode, 0)
+        finish = self.shown_finish(c)
+        self.assertEqual(finish["target"], "complete")
+        self.assertEqual(finish["watch_timeout_minutes"], 30)
+        self.assertIs(finish["allow_merge"], False)
+        self.assertIs(finish["allow_deploy"], False)
+        self.assertEqual(self.shown_finish({})["target"], "complete")
+        self.assertIs(self.shown_finish({})["allow_merge"], False)
+        self.assertIs(self.shown_finish({})["allow_deploy"], False)
+
+    def test_show_keeps_explicit_targets_permissions_and_timeout(self):
+        for target in ("complete", "pr-green", "merged", "deployed"):
+            with self.subTest(target=target):
+                c = cfg(finish__target=target, finish__allow_merge=True,
+                        finish__allow_deploy=False, finish__watch_timeout_minutes=7)
+                finish = self.shown_finish(c)
+                self.assertEqual(finish, c["finish"])
+        self.assertIs(self.shown_finish(cfg(finish__allow_deploy=True))["allow_deploy"], True)
+
     def test_workers_pool_rotates_with_index(self):
         out = [run_cli(cfg(), "cmd", "workers", "--index", str(i)).stdout.strip() for i in range(4)]
         self.assertEqual(out, ["pi --model prov/builder-1:medium",

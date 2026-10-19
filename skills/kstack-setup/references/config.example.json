@@ -38,8 +38,9 @@
     "max_fails": 3
   },
   "finish": {
-    "target": "pr-green",
+    "target": "complete",
     "max_fix_rounds": 3,
+    "watch_timeout_minutes": 30,
     "allow_merge": false,
     "allow_deploy": false
   }
