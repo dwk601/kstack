@@ -34,7 +34,6 @@ BASE = {
         "plan_critic": "critic",
         "workers": ["builder", "builder2"],
         "reviewer": "checker",
-        "security_reviewer": "critic",
         "verifiers": ["critic", "checker", "deep"],
         "fixer": "builder",
     },

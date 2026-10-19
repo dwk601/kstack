@@ -28,7 +28,6 @@
       "builder"
     ],
     "reviewer": "checker",
-    "security_reviewer": "critic",
     "verifiers": [
       "critic",
       "checker"

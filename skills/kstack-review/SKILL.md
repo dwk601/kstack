@@ -14,12 +14,11 @@ Never review your own implementation. If you authored it, dispatch a fresh confi
 
 - **plan**: check scope, code facts, file overlap, dependencies, parallelism, and checkable acceptance criteria. No code revision is required yet.
 - **code**: review an exact base/head pair against the task.
-- **security**: trace authorization, untrusted input, secrets, migrations, and data exposure.
 - **audit**: check the combined diff with one assigned focus: scope, cross-task behavior, or regressions. Inspect evidence rather than trusting summaries; reproduce the claims relevant to that focus.
 
 ## Review the code
 
-1. Record base/head SHAs. Code reviews run the task checks and lint. Security reviews and audits inspect gates evidence and run focused probes, not unrelated suites again. An unavailable required check is BLOCKED.
+1. Record base/head SHAs. Code reviews run the task checks and lint. Audits inspect gates evidence and run focused probes, not unrelated suites again. An unavailable required check is BLOCKED.
 2. Read the diff against acceptance criteria, then follow callers, stored data, contracts, config, and shared state beyond the changed files.
 3. Check correctness, edge cases, root cause, unnecessary complexity, and whether the evidence proves the behavior. Confirm the assumptions that make the change safe.
 

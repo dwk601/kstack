@@ -26,7 +26,7 @@ Use the plan in this conversation. If lost, reconstruct it from the request, cod
 
 - The `reviewer` uses `../kstack-review/SKILL.md` on the frozen base/head pair. For a one-task job, include scope and regression audit so this review can also fill one final audit lane.
 - FAIL returns to the worker. After `max_fails`, block the task and skip dependents. BLOCKED is not a strike; retry only after the environment is repaired, otherwise report partial.
-- High-risk tasks also need `security_reviewer` PASS on the same revision. Reviewers never fix code.
+- Reviewers never fix code.
 
 ## 4. Integrate
 

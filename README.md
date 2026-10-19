@@ -63,7 +63,7 @@ All entry points are explicit-only, declared in the `SKILL.md` frontmatter (`dis
 | `kstack-finish` | Push, PR, watch checks, fix until green |
 | `kstack-understand` | How and why code works |
 | `kstack-debug` | Root cause with runtime evidence |
-| `kstack-review` | Plan, code, security, or audit review: PASS, FAIL, or BLOCKED with evidence |
+| `kstack-review` | Plan, code, or audit review: PASS, FAIL, or BLOCKED with evidence |
 | `kstack-verify` | Drive the real app and keep proof |
 | `kstack-perf` | Baseline, limiter, measured fix |
 | `kstack-improve` | Turn repeated mistakes into checks |

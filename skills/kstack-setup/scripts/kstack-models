@@ -19,8 +19,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROLES = ("planner", "plan_critic", "workers", "reviewer",
-         "security_reviewer", "verifiers", "fixer")
+ROLES = ("planner", "plan_critic", "workers", "reviewer", "verifiers", "fixer")
 CLIS = ("pi", "codex", "claude", "custom")
 PI_EFFORTS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
 CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
