@@ -121,7 +121,7 @@ Run the offline helper and prompt-contract tests from this repository:
 python3 -B -m unittest discover -s tests -v
 ```
 
-These are offline contract checks, not live proof of GitHub merging or deployment. Local Git command-semantic sandboxes require `TMPDIR` scratch and use isolated temporary repos and a file:// bare remote, no network (skip if Git is absent); they cover a real paused interactive rebase and CAS/upstream-config retention plus exact section removal/readback, but are not an autonomous cleanup engine or workflow test. Catalog validation and skill discovery do not prove an end-to-end Herdr run.
+These are offline contract checks, not live proof of GitHub merging or deployment. Local Git command-semantic sandboxes use `TMPDIR` if set, otherwise Python's portable `tempfile` fallback, and use isolated temporary repos and a file:// bare remote, no network (skip if Git is absent); they cover a real paused interactive rebase and CAS/upstream-config retention plus exact section removal/readback, but are not an autonomous cleanup engine or workflow test. Catalog validation and skill discovery do not prove an end-to-end Herdr run.
 
 ## Not included
 
