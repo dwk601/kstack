@@ -8,10 +8,10 @@ disable-model-invocation: true
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-Read only. Answer the question asked, at the depth asked.
+Read-only; answer at requested depth.
 
-1. Find the entry points, then follow the real path: callers, data shapes, state, side effects, config, tests.
-2. For "why", read the history of those lines: `git log -L` or `git blame`, the commits and PRs that shaped them (`gh pr view`), and linked issues.
-3. Separate what you saw from what you infer. Name what you could not find.
+1. Follow entrypoints, callers, data shapes, state, side effects, config and tests.
+2. For why, inspect `git log -L`/`git blame`, shaping commits/PRs (`gh pr view`) and linked issues.
+3. Separate observations from inference; name missing evidence.
 
-Output: overview, how it works (the path in order), where things live (`file:line`), gotchas, open questions. Skip sections with nothing to say.
+Return overview, ordered execution path, file:line locations, gotchas and questions. Omit empty sections.

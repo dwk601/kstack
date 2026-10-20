@@ -6,12 +6,12 @@ disable-model-invocation: true
 
 # kstack debug
 
-Shared rules: read `../kstack/SKILL.md` first. Standalone fixes enter Plan and Execute; assigned workers use the steps below. Diagnosis-only requests never edit source; use runtime probes and report if source instrumentation is required.
+Shared rules: read `../kstack/SKILL.md` first. Diagnosis-only never edits source; report when source instrumentation is needed.
 
-1. Reproduce it where it happens: UI, CLI, API, or job. If it will not reproduce, narrow the conditions or use transient stdout instrumentation until it does; never save diagnostic logs. If you cannot reach that surface, say why.
-2. List hypotheses. Test the one that cuts the most: read existing application logs without changing them, a transient probe, `git bisect`, a debugger. Stream probe output to chat; unavoidable scratch follows the shared every-return cleanup rule. Drop what the evidence rules out.
-3. Name the mechanism before fixing. If two fixes built on one assumption failed, question the assumption. If the user asked only for a diagnosis, stop here.
-4. Make the smallest fix the evidence supports. Revert anything a disproved hypothesis added.
-5. Rerun the original reproduction. Add a regression test when one is cheap and clear, and verify it fails on the unfixed code and passes with the fix.
+1. Reproduce at the failing UI/CLI/API/job. Narrow conditions or use transient stdout instrumentation until reproducible. Explain inaccessible surfaces.
+2. List hypotheses; test the most discriminating with existing logs, probes, bisect or debugger. Drop disproved hypotheses.
+3. Name the mechanism before fixing. Two failed fixes on one assumption mean question it. Diagnosis-only stops here.
+4. Apply the smallest supported fix; revert disproved experiments.
+5. Rerun original reproduction. Add cheap, clear regressions and prove they fail before/pass after.
 
-Report: symptom, root cause with evidence, fix, and the before and after output.
+Report symptom, evidenced cause, fix and before/after output.

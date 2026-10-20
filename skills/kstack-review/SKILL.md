@@ -8,22 +8,22 @@ disable-model-invocation: true
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-Never review your own implementation. If you authored it, dispatch a fresh configured reviewer. Do not edit source or tests.
+Never review your implementation; dispatch a fresh configured reviewer. Never edit source/tests.
 
 ## Modes
 
-- **plan**: check scope, code facts, file overlap, dependencies, parallelism, and checkable acceptance criteria. No code revision is required yet.
-- **code**: review an exact base/head pair against the task.
-- **audit**: check the combined diff with one assigned focus: scope, cross-task behavior, or regressions. Inspect evidence rather than trusting summaries; reproduce the claims relevant to that focus.
+- **plan**: check scope, code facts, file overlap, dependencies, parallelism and observable acceptance. No revision required yet.
+- **code**: review exact base/head against task.
+- **audit**: inspect combined diff for assigned scope, cross-task behavior or regression focus. Verify evidence and reproduce relevant claims; don't trust summaries.
 
-## Review the code
+## Method
 
-1. Record base/head SHAs. Code reviews run the task checks and lint. Audits inspect gates evidence and run focused probes, not unrelated suites again. An unavailable required check is BLOCKED.
-2. Read the diff against acceptance criteria, then follow callers, stored data, contracts, config, and shared state beyond the changed files. Search the repo for the coding standards that apply, and cite the rule for any finding that rests on one.
-3. Check correctness, edge cases, root cause, unnecessary complexity, and whether the evidence proves the behavior. Confirm the assumptions that make the change safe.
+1. Record base/head SHAs. Code reviews run task checks/lint; audits inspect gates evidence and run focused probes without repeating unrelated suites. Required unavailable checks are BLOCKED.
+2. Compare diff to acceptance. Follow callers, stored data, contracts, config and shared state beyond changed files. Find applicable repo standards; cite rules supporting findings.
+3. Check correctness, edges, root cause, complexity, behavioral evidence and safety assumptions.
 
 ## Verdict
 
-Return `task or lane | base/head SHAs | PASS/FAIL/BLOCKED | checks | evidence`. Plan reviews identify the reviewed in-chat plan instead of SHAs.
+Return `task or lane | base/head SHAs | PASS/FAIL/BLOCKED | checks | evidence`; plan reviews identify the chat plan instead of SHAs.
 
-For FAIL, list every proven finding in one pass: severity, file:line, broken criterion, evidence, and fix. BLOCKED names the missing check and error. Style notes do not block. A missing test is a failure only when the repo tests that area and behavior is otherwise unproven.
+FAIL lists all proven findings together: severity, file:line, broken criterion, evidence, fix. BLOCKED names missing check/error. Style does not block. Missing tests fail only where the repo tests that area and behavior remains unproven.

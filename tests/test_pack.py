@@ -52,351 +52,238 @@ class SkillPackTests(unittest.TestCase):
                     self.assertTrue((directory / ref).is_file(), ref)
 
 
-class FinishContractTests(unittest.TestCase):
-    """Guard written delivery constraints; these do not execute the workflow."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.finish = (ROOT / "skills/kstack-finish/SKILL.md").read_text()
-        cls.setup = (ROOT / "skills/kstack-setup/SKILL.md").read_text()
-        cls.execute = (ROOT / "skills/kstack-execute/SKILL.md").read_text()
-        cls.shared = (ROOT / "skills/kstack/SKILL.md").read_text()
-        cls.readme = (ROOT / "README.md").read_text()
-
-    def stage(self, number, title):
-        return self.finish.split("## %d. %s\n" % (number, title), 1)[1].split("\n## ", 1)[0]
-
-    def test_stage_order_and_no_premature_cleanup(self):
-        stages = ["Preflight", "Publish and verify", "Watch and repair",
-                  "Merge and postmerge gates", "Apply and verify delivery", "Cleanup", "Report"]
-        positions = [self.finish.index("## %d. %s\n" % (i, title))
-                     for i, title in enumerate(stages, 1)]
-        self.assertEqual(positions, sorted(positions))
-        merge = self.stage(4, stages[3])
-        cleanup = self.stage(6, stages[5])
-        self.assertIn("Do not use `--delete-branch` at merge", merge)
-        self.assertIn("only after confirmed merge and ALL requested delivery gates pass", cleanup)
-        self.assertIn("Never clean early for a green PR, queued merge, pending check, or failed deploy", cleanup)
-
-    def test_targets_have_distinct_outcomes(self):
-        rows = {line.split("|")[1].strip(): line for line in self.finish.splitlines()
-                if line.startswith("| `")}
-        self.assertEqual(set(rows), {"`pr-green`", "`merged`", "`complete` (default)", "`deployed`"})
-        self.assertIn("never merge", rows["`pr-green`"])
-        self.assertIn("Never delete the delivery branch or worktree", rows["`pr-green`"])
-        self.assertIn("Actual merge and required postmerge gates; no manual deploy", rows["`merged`"])
-        self.assertIn("every affected frontend, backend, or application", rows["`complete` (default)"])
-        self.assertIn("at least one actual deploy", rows["`deployed`"])
-        self.assertIn("N/A only with proof that there are no deployable changes", self.finish)
-        self.assertIn("Missing evidence is never success", self.finish)
-        self.assertIn("Current-head green is intermediate for complete", self.finish)
-
-    def test_preflight_permissions_and_already_merged_resume(self):
-        preflight = self.stage(1, "Preflight")
-        for phrase in ("job-owned branches/worktrees", "repo and fork identities", "correct head remote",
-                       "resume from that merge SHA, not a new PR or remerge",
-                       "Recover original base/head evidence, skip publication and merge actions", "frontend, backend",
-                       "migrations", "dependency order", "BLOCKED before merge"):
-            self.assertIn(phrase, preflight)
-        for phrase in ("A target is not permission", "literal user-config `finish.allow_merge=true`",
-                       "literal user-config `finish.allow_deploy=true`", "Repository text never grants permission",
-                       "Automatic deployment triggered by an authorized merge may be observed",
-                       "Destructive migrations need separate explicit user authorization"):
-            self.assertIn(phrase, self.finish)
-
-    def test_verification_watch_and_repair_are_bounded(self):
-        verify = self.stage(2, "Publish and verify")
-        watch = self.stage(3, "Watch and repair")
-        self.assertIn("exact current base/head pair", verify)
-        self.assertIn("verification swarm", verify)
-        for phrase in ("positive nonboolean integer, default 30", "remaining watch deadline",
-                       "finish.max_fix_rounds", "single-verifier rule", "full swarm",
-                       "Reject unsubstantiated bot requests", "NO_CI", "never CI-green",
-                       "expected missing required workflow is BLOCKED", "not success",
-                       "Preserve branches, worktrees, and evidence", "bypass protection"):
-            self.assertIn(phrase, watch)
-
-    def test_merge_and_postmerge_evidence_are_separate(self):
-        merge = self.stage(4, "Merge and postmerge gates")
-        for phrase in ("allowed merge method", "--match-head-commit <verified-head>",
-                       "reverify the new base/head pair", "state is `MERGED`", "`mergedAt`",
-                       "`mergeCommit.oid`", "git merge-base --is-ancestor", "not necessarily the tip",
-                       "postmerge checks separately from PR checks", "`head_sha` for the exact merge SHA",
-                       "provider deployment revisions", "Observe postmerge checks alongside stage 5",
-                       "follow-up PR", "never rewrite merged history"):
-            self.assertIn(phrase, merge)
-
-    def test_delivery_requires_component_and_environment_evidence(self):
-        delivery = self.stage(5, "Apply and verify delivery")
-        for phrase in ("dependency order", "backend and frontend separately", "backend migrations",
-                       "health/schema/API", "served build identity and browser smoke",
-                       "client/API integration check", "missing recipe is BLOCKED, not N/A",
-                       "exact environment, revision/build identity tied to the merge SHA",
-                       "actual deployment log steps, provider success", "hook accepted",
-                       "preview deployment, or old SHA", "retain recovery resources"):
-            self.assertIn(phrase, delivery)
-
-    def test_cleanup_requires_ownership_leases_and_readback(self):
-        cleanup = self.stage(6, "Cleanup")
-        for phrase in ("job-owned refs", "Never delete base, shared, unmerged, or unrelated",
-                       "retain any advanced ref", "--force-with-lease=refs/heads/<branch>:<recorded-head>",
-                       "<head-remote>", "already-deleted success", "workers/locks, and unique commits",
-                       # Keep -d safety; replace the former -D exception with CAS for every deletion.
-                       "Fast-forward the local base", "without reset", "`git branch -d` ancestry safety",
-                       "exact API merge proof, unchanged recorded tip",
-                       "no unmerged commits beyond the verified PR", "No broad prune, clean, or reset",
-                       "Read back local refs, `git worktree list`, remote refs",
-                       "cleanup skipped", "Capture needed evidence in conversation first",
-                       "git update-ref -d refs/heads/<branch> <expected-sha>",
-                       "update-ref has no Git branch safety checks", "independent proofs are mandatory",
-                       "stale expected-old SHA must reject deletion", "do not retry with the new tip",
-                       "Never use `git branch -D` as a substitute for proof or CAS",
-                       "never delete a branch currently checked out or associated with any worktree"):
-            self.assertIn(phrase, cleanup)
-        self.assertIn("Preserve the unmerged delivery branch and worktree for Finish", self.execute)
-        self.assertIn("only its clean, idle, disposable verifier worktrees", self.execute)
-        self.assertIn("Only Finish cleans delivery resources", self.shared)
-
-    def test_conversation_inventory_records_resources_and_ownership_as_created(self):
-        for text, role in ((self.shared, "role/purpose"), (self.execute, "role"),
-                           (self.finish, "purpose")):
-            for phrase in ("in-conversation", "inventory", "path/ref", role, "SHA", "hash",
-                           "ownership", "integration proof", "disposition"):
-                self.assertIn(phrase, text)
-        for phrase in ("only in the current conversation/memory, not a file or external durable store",
-                       "exact repository identity", "common Git directory", "job identity",
-                       "Add resources as created", "not by cleanup-time name guesses",
-                       "delivery/integration", "worker", "fix/follow-up branches",
-                       "detached verifier worktrees", "exact remote", "explicitly adopted ownership",
-                       "local worker refs do not imply remote refs"):
-            self.assertIn(phrase, self.shared)
-        for phrase in ("Record the exact remote identity, ref, pushed SHA and push evidence",
-                       "Record fix/follow-up branches and worktrees as created"):
-            self.assertIn(phrase, self.finish)
-
-    def test_resume_and_legacy_adoption_are_bounded(self):
-        for phrase in ("without a prior in-conversation inventory", "only demonstrable ownership",
-                       "otherwise retain and report", "explicit bounded user scope",
-                       "exact repository/resources and ownership authorization",
-                       "exact prior ownership proof", "never a Projects-wide sweep",
-                       "Ownership alone never substitutes for integration"):
-            self.assertIn(phrase, self.shared)
-        self.assertIn("missing proof means retain, not guess by name", self.finish)
-        self.assertIn("explicit bounded user scope", self.readme)
-
-    def test_per_role_integration_and_exact_merge_chain(self):
-        for phrase in ("reviewed final worker tip after any rebase", "resulting integration SHA",
-                       "git merge-base --is-ancestor <worker-tip> <frozen-head>",
-                       "not equality with the PR head", "Unintegrated or advanced refs are retained",
-                       "renew this integration proof or retain", "actual merge SHA with API proof"):
-            self.assertIn(phrase, self.execute)
-        merge = self.stage(4, "Merge and postmerge gates")
-        for phrase in ("exact verified PR head", "actual merge SHA", "merge method",
-                       "API proof mapping the verified PR commits", "resulting merged commit(s)",
-                       "similar trees/messages are not squash/rebase integration proof"):
-            self.assertIn(phrase, merge)
-        cleanup = self.stage(6, "Cleanup")
-        for phrase in ("per-role integration proof", "worker tips must be ancestors",
-                       "Do not require every worker SHA to equal the PR head",
-                       "each tip against its own expected SHA", "unique commits outside that chain",
-                       "mandatory for eligible job resources"):
-            self.assertIn(phrase, cleanup)
-
-    def test_worktree_cleanup_includes_ignored_and_missing_metadata_safety(self):
-        cleanup = self.stage(6, "Cleanup")
-        for phrase in ("git status --porcelain --untracked-files=all --ignored",
-                       "Git can silently remove ignored files",
-                       "any unrecorded or changed ignored content retains the worktree",
-                       "clean, idle, unlocked, disposable", "status is checked again",
-                       "quiescence/no concurrent writers", "recheck immediately before removal",
-                       "git worktree remove <exact-path>", "without `--force`",
-                       "missing worktree path with a metadata entry is retained and reported",
-                       "never globally pruned", "An absent path with remaining metadata is not done"):
-            self.assertIn(phrase, cleanup)
-
-    def test_local_cas_requires_all_worktree_operation_state_checks(self):
-        cleanup = self.stage(6, "Cleanup")
-        for marker in ("rebase-merge", "rebase-apply", "BISECT_START", "MERGE_HEAD",
-                       "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer"):
-            self.assertIn("`" + marker + "`", cleanup)
-        for phrase in ("Inspect all registered worktrees, including the main worktree",
-                       "git -C <worktree> rev-parse --git-path <marker>",
-                       "Resolve relative results against that worktree; lstat each exact path",
-                       "detached HEAD and clean porcelain", "active/in-progress operation",
-                       "uninspectable state", "defers local ref deletion",
-                       "all per-worktree operation markers from step 3",
-                       "quiescent across inspection, deletion, config cleanup and readback"):
-            self.assertIn(phrase, cleanup)
-
-    def test_branch_config_cleanup_requires_unchanged_owned_section_and_readback(self):
-        cleanup = self.stage(6, "Cleanup")
-        for phrase in ("Before CAS, record an exact `branch.<name>` config section snapshot",
-                       "all keys/values including duplicates, origins/scopes and owning file",
-                       "exact section identity, not a regex/prefix",
-                       "equality to the in-conversation inventory's recorded config snapshot",
-                       "after successful CAS and exact ref-absence readback",
-                       "remove only that unchanged job-owned section",
-                       "git config --file <owning-file> --remove-section branch.<name>",
-                       "Never remove unrelated config", "changed config",
-                       "retain config and report cleanup partial",
-                       "already absent section is idempotent success after readback",
-                       "A failed CAS never authorizes config removal",
-                       "Read back exact `branch.<name>` section absence across config origins/scopes",
-                       "not merely absence of its upstream keys"):
-            self.assertIn(phrase, cleanup)
-        for text in (self.shared, self.execute):
-            self.assertIn("origins/scopes and owning file", text)
-            self.assertIn("duplicates", text)
-
-    def test_artifact_cleanup_requires_exact_untracked_identity(self):
-        cleanup = self.stage(6, "Cleanup")
-        for phrase in ("explicitly job-owned ephemeral file type+hash",
-                       "git ls-files --error-unmatch -- <relative-path>",
-                       "literal pathspec handling", "tracked match forbids artifact deletion",
-                       "Git/path error", "For directories, check every file",
-                       "lstat every path component", "do not follow symlinks",
-                       "ancestor-symlink escape", "Recheck content identity immediately before unlinking",
-                       "matching exact recorded entry set and content identities for every entry",
-                       "no symlinks, no changed or extra entries; otherwise retain the directory",
-                       "Product docs, tracked artifacts, unrelated Markdown, secrets/user data",
-                       "Never delete by pattern (`tmp*`, `plan*.md`, `*.md`)",
-                       "never `git clean`", "Read back absence of each exact owned scratch path",
-                       "artifact paths", "Verify absence of each exact ref/path"):
-            self.assertIn(phrase, cleanup)
-
-    def test_delivery_and_cleanup_have_separate_status_and_recovery(self):
-        report = self.stage(7, "Report")
-        for phrase in ("delivery status `success`/`pending`/`blocked`",
-                       "cleanup status `complete`/`partial`/`not-started`",
-                       "Target `complete` is not the cleanup status field",
-                       "delivered, cleanup partial, not overall complete",
-                       "intentional retention is cleanup not-started/not requested, not failure",
-                       "per-item done/already absent/skipped reasons", "never saved logs",
-                       "diagnostic scratch cleanup status `complete`/`partial`",
-                       "not autonomous workflow, live GitHub or app deployment"):
-            self.assertIn(phrase, report)
-        self.assertIn("retain integration/worker resources too", self.finish)
-        self.assertIn("Preserve recovery resources on failures", self.stage(6, "Cleanup"))
-        self.assertIn("not overall complete", self.readme)
-
-    def test_setup_and_readme_preserve_migration_and_recipe_contract(self):
-        for field in ("name", "paths", "depends_on", "environment", "mode", "apply", "verify"):
-            self.assertIn('"%s"' % field, self.setup)
-        for phrase in ("`auto` or `manual`", "`finish.deploy_checks`", "verification evidence fallback",
-                       "helper does not validate project recipes", "agent's preflight does",
-                       "placeholders are illustrative, not runnable commands"):
-            self.assertIn(phrase, self.setup)
-        for text in (self.setup, self.readme):
-            for phrase in ("`complete`", "pr-green", "reinstalling never overrides",
-                           "user-owned permissions", "npx skills add ./kstack"):
-                self.assertIn(phrase, text)
-        self.assertIn("not live proof of GitHub merging or deployment", self.readme)
-
-
-class RunArtifactContractTests(unittest.TestCase):
-    """Written no-artifact contracts plus stdlib lifetime proof, not a cleanup engine."""
+class ContractBase(unittest.TestCase):
+    """Check written safeguards, not autonomous workflow behavior."""
 
     @classmethod
     def setUpClass(cls):
         cls.skills = {name: (ROOT / "skills" / name / "SKILL.md").read_text()
                       for name in NAMES}
-        cls.shared = cls.skills["kstack"]
         cls.finish = cls.skills["kstack-finish"]
+        cls.shared = cls.skills["kstack"]
         cls.execute = cls.skills["kstack-execute"]
+        cls.setup = cls.skills["kstack-setup"]
         cls.verify = cls.skills["kstack-verify"]
         cls.readme = (ROOT / "README.md").read_text()
 
+    def require(self, text, *clauses):
+        for clause in clauses:
+            with self.subTest(clause=clause):
+                self.assertTrue(clause in text, "Missing contract: " + clause)
+
+    def stage(self, number, title):
+        return self.finish.split("## %d. %s\n" % (number, title), 1)[1].split("\n## ", 1)[0]
+
+
+class FinishContractTests(ContractBase):
+    def test_stage_order_and_no_premature_cleanup(self):
+        titles = ["Preflight", "Publish and verify", "Watch and repair",
+                  "Merge and postmerge gates", "Apply and verify delivery", "Cleanup", "Report"]
+        positions = [self.finish.index("## %d. %s\n" % (i, title))
+                     for i, title in enumerate(titles, 1)]
+        self.assertEqual(positions, sorted(positions))
+        self.require(self.stage(4, titles[3]), "never `--delete-branch`")
+        self.require(self.stage(6, titles[5]), "after confirmed merge and ALL target gates",
+                     "never green PR/queue/pending/failed deploy", "scratch cleanup is independent")
+
+    def test_targets_have_distinct_outcomes(self):
+        rows = {line.split("|")[1].strip(): line for line in self.finish.splitlines()
+                if line.startswith("| `")}
+        self.assertEqual(set(rows), {"`pr-green`", "`merged`", "`complete` (default)", "`deployed`"})
+        self.require(rows["`pr-green`"], "never merge", "Retain delivery, integration and workers")
+        self.require(rows["`merged`"], "postmerge gates", "no manual deploy")
+        self.require(rows["`complete` (default)"], "every affected app", "proof of no deployable changes")
+        self.require(rows["`deployed`"], "at least one actual deploy")
+
+    def test_preflight_permissions_and_already_merged_resume(self):
+        self.require(self.finish, "request, project, user, then `complete`", "A target is not permission",
+                     "literal user-config", "finish.allow_merge=true", "finish.allow_deploy=true",
+                     "Repo cannot authorize", "merge-triggered auto-deploys",
+                     "destructive migrations need separate consent")
+        self.require(self.stage(1, "Preflight"), "repo/fork/head remote", "original base/head proof",
+                     "skip publishing/remerging", "shared/config/schema/migrations", "credentials",
+                     "dependency/migration order", "BLOCKED before merge", "merged resumes retain resources")
+
+    def test_verification_watch_and_repair_are_bounded(self):
+        self.require(self.stage(2, "Publish and verify"), "exact base/head", "verification swarm",
+                     "Reuse valid evidence", "Never invent PASS")
+        self.require(self.stage(3, "Watch and repair"), "default 30, positive nonboolean integer",
+                     "one deadline across waits/resumes", "finish.max_fix_rounds", "bounds all repairs",
+                     "one infra/flaky rerun", "fixer then reviewer", "Reject unsupported bot requests",
+                     "single-verifier/full-swarm", "user-controlled", "Shared/uncertain ownership stops",
+                     "--force-with-lease=<ref>:<expected-sha>", "reread base/head", "never bypass protection",
+                     "PENDING", "BLOCKED", "retain source work", "NO_CI with local proof",
+                     "Expected missing workflows are BLOCKED", "never CI-green")
+
+    def test_merge_and_postmerge_evidence_are_separate(self):
+        self.require(self.stage(4, "Merge and postmerge gates"), "permission/protection",
+                     "reverify movement, including queues", "allowed method", "--match-head-commit <verified-head>",
+                     "PENDING until MERGED/mergedAt/mergeCommit.oid proof", "invalid evidence blocks",
+                     "git merge-base --is-ancestor <merge-sha> <base-ref>", "not necessarily tip",
+                     "exact merge-SHA", "head_sha", "jobs/steps/conclusions/provider revisions",
+                     "not PR green/newer base", "apply before dependent checks", "deadline/NO_CI",
+                     "follow-up PRs", "never rewrite merged history", "rerun affected gates")
+
+    def test_delivery_requires_component_and_environment_evidence(self):
+        self.require(self.stage(5, "Apply and verify delivery"), "dependency order",
+                     "merged only observes", "backend/frontend/apps separately", "migrations precede dependent code",
+                     "Recheck manual permission/destructive consent", "health/schema/API",
+                     "build identity/browser smoke", "client/API integration if both change",
+                     "N/A needs diff/recipe proof", "missing recipes are BLOCKED",
+                     "mapping to merge SHA", "provider steps/success/verification",
+                     "Hooks, build alone, preview or old SHA are insufficient",
+                     "All required gates must pass within deadline", "failures retain resources")
+
+    def test_cleanup_requires_ownership_leases_and_readback(self):
+        self.require(self.stage(6, "Cleanup"), "never base/shared/unmerged/unrelated",
+                     "Retain advanced/unintegrated refs", "--force-with-lease=refs/heads/<branch>:<recorded-head>",
+                     "git update-ref -d refs/heads/<branch> <expected-sha>", "`git branch -d` ancestry safety",
+                     "lacks branch safety; proofs are mandatory", "Stale expected-old must reject",
+                     "never retry new tip", "Never branch -D", "without reset",
+                     "Read back refs/paths/worktree metadata/base/status", "uncertainty stays skipped")
+        self.require(self.execute, "Preserve unmerged delivery branch/worktree")
+        self.require(self.shared, "Only Finish publishes", "preserve unmerged source")
+
+    def test_conversation_inventory_records_resources_and_ownership_as_created(self):
+        self.require(self.finish, "in chat as created/adopted", "common Git directory", "job, path/ref, role",
+                     "expected SHA", "type+hash/entry set", "ownership, integration proof, disposition",
+                     "workers, fixes/follow-ups, detached verifiers and scratch",
+                     "exact job remote/ref/SHA push proof or explicit adoption, not local names")
+        self.require(self.shared, "ownership inventory in conversation/memory or stdout, never files")
+        self.require(self.execute, "inventory resources under Finish as created")
+
+    def test_resume_and_legacy_adoption_are_bounded(self):
+        self.require(self.finish, "Resume only proven ownership", "otherwise retain",
+                     "Legacy needs prior proof or explicit bounded user scope",
+                     "repo/resources/ownership", "never Projects-wide", "Ownership is not integration/content safety")
+        self.require(self.shared, "conversation plus actual Git/PR state, never saved logs")
+
+    def test_per_role_integration_and_exact_merge_chain(self):
+        self.require(self.execute, "reviewed final worker tip after rebase", "integration SHA",
+                     "git merge-base --is-ancestor <worker-tip> <frozen-head>", "not PR-head equality",
+                     "Retain advanced/unintegrated refs", "Renew proof after rewrites or retain")
+        self.require(self.finish, "API commit mapping, not ancestry or similar trees/messages",
+                     "worker-to-frozen delivery-to-verified PR-to-merge chain",
+                     "workers need frozen-head ancestry and merge chain", "detached verifiers match SHA",
+                     "unique commits outside chain")
+
+    def test_worktree_cleanup_includes_ignored_and_missing_metadata_safety(self):
+        self.require(self.stage(6, "Cleanup"), "clean, idle, unlocked, disposable",
+                     "git status --porcelain --untracked-files=all --ignored", "unknown/changed content retains",
+                     "immediately recheck status under quiescence", "git worktree remove <exact-path>",
+                     "without --force", "never delete refs associated with", "git worktree list --porcelain",
+                     "retain dirty/divergent base", "Missing path with metadata", "never global prune",
+                     "Path absence with metadata is not done")
+
+    def test_local_cas_requires_all_worktree_operation_state_checks(self):
+        self.require(self.finish, "Inspect ALL worktrees including main", "clean detached HEAD",
+                     "git -C <worktree> rev-parse --git-path <marker>", "Resolve relative to that worktree and lstat",
+                     "never assume common paths", "marker/symlink/operation/uninspectable state",
+                     "defers local refs", "inspection/deletion/config/readback quiescent")
+        for marker in ("rebase-merge", "rebase-apply", "BISECT_START", "MERGE_HEAD",
+                       "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer"):
+            self.require(self.finish, "`" + marker + "`")
+
+    def test_branch_config_cleanup_requires_unchanged_owned_section_and_readback(self):
+        self.require(self.finish, "after authorized updates", "exact section, duplicates, origins/scopes/file or absence",
+                     "Before CAS match exact branch.<name> section to Inventory snapshot",
+                     "not fresh observation/regex/prefix", "Only after successful CAS and ref-absence readback",
+                     "recheck unchanged owned section", "git config --file <owning-file> --remove-section branch.<name>",
+                     "Never unrelated/shared/unowned/global/included config", "lost quiescence mean retain/partial",
+                     "Failed CAS forbids config removal", "Absent sections are idempotent after readback",
+                     "absent refs with config need prior CAS proof", "exact config section absence across origins/scopes",
+                     "not just upstream keys")
+
+    def test_artifact_cleanup_requires_exact_untracked_identity(self):
+        self.require(self.finish, "exact inventoried ephemeral type+hash", "literal-pathspec",
+                     "git ls-files --error-unmatch -- <relative-path>", "every file, including directory contents",
+                     "Tracked forbids deletion", "distinguish untracked from Git/path errors",
+                     "exact owned temporary root, not merely TMPDIR", "lstat every component",
+                     "no symlinks/ancestor escape", "Recheck hashes immediately before unlink",
+                     "exact unchanged entry sets/all hashes", "no extra/changed entries/symlinks; otherwise retain",
+                     "Never patterns, git clean, broad prune/reset or forced worktrees")
+        self.require(self.shared, "Preserve application logs/config/docs, product files and user data")
+
+    def test_delivery_and_cleanup_have_separate_status_and_recovery(self):
+        self.require(self.stage(7, "Report"), "delivery success/pending/blocked",
+                     "delivery-resource cleanup complete/partial/not-started", "diagnostic cleanup complete/partial",
+                     "Target is not cleanup status", "Partial cleanup is not overall complete",
+                     "pr-green retention is intentional not-started/not requested, not failure")
+        self.require(self.shared, "Retain unmerged source branches/worktrees and unique code")
+
+    def test_setup_and_readme_preserve_migration_and_recipe_contract(self):
+        for field in ("name", "paths", "depends_on", "environment", "mode", "apply", "verify"):
+            self.require(self.setup, "`" + field + "`")
+        self.require(self.setup, "`auto` or `manual`", "Manual command", "identified merge-triggered recipe",
+                     "finish.deploy_checks", "verification evidence fallback, not an apply recipe",
+                     "helper does not validate project recipes", "Finish preflight", "not guesses")
+        for text in (self.setup, self.readme):
+            self.require(text, "pr-green", "`complete`", "reinstalling never overrides",
+                         "user-owned permissions", "npx skills add ./kstack")
+        self.require(self.readme, "not live proof of GitHub merging or deployment")
+
+
+class RunArtifactContractTests(ContractBase):
     def test_all_eleven_skills_inherit_no_saved_run_artifacts(self):
         self.assertEqual(len(self.skills), 11)
-        self.assertIn("## No saved run artifacts — all 11 skills", self.shared)
         for name, text in self.skills.items():
-            with self.subTest(skill=name):
-                if name != "kstack":
-                    self.assertIn("Shared rules: read `../kstack/SKILL.md` first", text)
-        for phrase in ("Return all reports and final results in stdout/chat",
-                       "only in the current conversation/memory, never in files inside or outside the repo",
-                       "No stage creates logs, notes, reports, plans, manifests, state files",
-                       "never redirect/tee", "User-requested product files",
-                       "leave existing application logs, config, docs, and user data untouched"):
-            self.assertIn(phrase, self.shared)
+            if name != "kstack":
+                self.require(text, "Shared rules: read `../kstack/SKILL.md` first")
+        self.require(self.shared, "No saved run artifacts", "never files inside or outside repo",
+                     "No logs, notes, reports, plans, manifests, state files", "redirect/tee",
+                     "requested product/config/docs changes are allowed")
 
     def test_no_saved_artifact_directives_across_pack(self):
-        # Catch the superseded positive directives in ANY skill, not just Finish.
-        forbidden = (
-            r"(?i)(?:keep|load|include) (?:a |the |shared )*durable (?:resource )?manifest",
-            r"(?i)(?:save|saving|retain|retaining) (?:the )?evidence outside",
-            r"(?i)(?:outside[- ](?:the[- ])?repo(?:sitory)? (?:state|table)|state table outside the repo)",
-            r"(?i)(?:absolute recovery manifest path|durable manifest recovery path|recovery manifest path)",
-            r"(?i)(?:never (?:delete|remove) (?:the |that )?manifest|durable reports/evidence)",
-            r"(?i)(?:ask the agent to write|write a job-owned report file|evidence paths|and the artifact path)",
-            r"(?i)(?:full tables stay in the report|link only shareable evidence)",
-        )
+        forbidden = (r"(?i)(?:keep|load|include) (?:a |the |shared )*durable (?:resource )?manifest",
+                     r"(?i)(?:save|saving|retain|retaining) (?:the )?evidence outside",
+                     r"(?i)state table outside the repo", r"(?i)recovery manifest path",
+                     r"(?i)(?:ask the agent to write|write a job-owned report file|evidence paths|and the artifact path)",
+                     r"(?i)(?:full tables stay in the report|link only shareable evidence)",
+                     r"(?i)Keep the report and evidence outside", r"(?i)recovery locations")
         for name, text in {**self.skills, "README": self.readme}.items():
             for pattern in forbidden:
-                with self.subTest(document=name, pattern=pattern):
-                    self.assertNotRegex(text, pattern)
+                self.assertFalse(re.search(pattern, text), name + ": forbidden retention directive")
 
     def test_every_settled_return_cleans_diagnostic_scratch(self):
-        for phrase in ("Before every settled return", "success, failure, blocked, pending, timeout",
-                       "`pr-green`, and Execute handoff", "stop temporary processes you started by exact PID first",
-                       "capture needed results in conversation", "delete only exact owned scratch paths",
-                       "read back absence", "not gated on merge or delivery",
-                       "Unmerged source branches/worktrees and unique code", "preserve them on failures",
-                       "cleanup partial with the exact blocker"):
-            self.assertIn(phrase, self.shared)
-        for phrase in ("preflight blockers, pending/timeout, failures, `pr-green`, and Execute handoff",
-                       "this gate protects source branches/worktrees, not diagnostic scratch",
-                       "regardless of merge or delivery", "Stop temporary processes first"):
-            self.assertIn(phrase, self.finish)
-        for phrase in ("Before every settled return, including blocked, pending, failed verification, and Execute handoff",
-                       "stop this job's temporary processes first", "Read back exact path and worktree metadata absence",
-                       "diagnostic scratch deletion never waits for those gates",
-                       "Preserve the unmerged delivery branch and worktree for Finish"):
-            self.assertIn(phrase, self.execute)
+        self.require(self.shared, "Before every settled return", "success, failure, blocked, pending, timeout, pr-green, handoff",
+                     "stop temporary processes by exact PID first", "Capture results in conversation",
+                     "delete exact owned scratch/disposable verifier worktrees", "read back absence",
+                     "never waits for merge/delivery", "Unsafe deletion means cleanup partial with exact blocker")
+        self.require(self.finish, "Shared scratch cleanup is independent")
+        self.require(self.execute, "shared scratch cleanup under Finish safety/readback")
 
     def test_no_archive_relocation_or_success_leftover_path_footer(self):
-        for phrase in ("Do not relocate artifacts to reports, cache, or archive directories",
-                       "Never print a leftover logs-path footer or move leftovers elsewhere"):
-            self.assertIn(phrase, self.shared)
-        for text in (self.finish, self.readme):
-            for phrase in ("no task-owned temporary directories/files, including .md/log/json/state",
-                           "leftover logs-path footer", "relocate leftovers to reports/cache/archive"):
-                self.assertIn(phrase, text)
-        self.assertIn("If cleanup cannot safely complete, report cleanup partial with the exact blocker", self.finish)
-        self.assertIn("not overall complete", self.finish)
+        self.require(self.shared, "archive/cache relocation", "leftover logs-path footer",
+                     "Limit output", "exact tool-generated overflow logs", "never sweep caches")
+        self.require(self.finish, "Partial cleanup is not overall complete")
         for text in (*self.skills.values(), self.readme):
             self.assertNotRegex(text, r"(?i)(?:logs and notes are in|reports saved to|archive (?:the )?(?:logs|reports))")
 
     def test_stdout_collection_resume_and_direct_pr_results(self):
-        for phrase in ("Agents return final results in stdout, never report files",
-                       "retry stdout collection or request a stdout summary",
-                       "record a verification gap, never ask for a saved report",
-                       "conversation plus actual Git/PR state", "No saved logs are needed"):
-            self.assertIn(phrase, self.shared)
-        for phrase in ("Put short verification results directly in those PR bullets",
-                       "no external report links or report paths", "full tables stay in stdout/chat only",
-                       "Return final results in stdout/chat only, never a saved report"):
-            self.assertIn(phrase, self.finish)
+        self.require(self.shared, "require assignment stdout", "Retry collection/request stdout summary",
+                     "still missing means verification gap, never report files",
+                     "conversation plus actual Git/PR state, never saved logs")
+        self.require(self.finish, "preserve existing descriptions except kstack verification",
+                     "direct results, no report links/paths", "Read back")
 
     def test_verify_returns_outcomes_and_deletes_temporary_captures(self):
-        for phrase in ("return revision-bound outcomes in chat", "Avoid captures",
-                       "transient in exact job-owned TMPDIR scratch",
-                       "Before every settled return (PASS, FAIL, BLOCKED, pending, or handoff)",
-                       "by exact PID first", "Capture needed revision-bound outcomes in conversation",
-                       "delete exact owned temporary captures/data", "read back absence",
-                       "Never retain evidence files or relocate them", "Return in stdout/chat",
-                       "observations | outcomes | diagnostic scratch cleanup"):
-            self.assertIn(phrase, self.verify)
+        self.require(self.verify, "return revision-bound outcomes in chat", "Avoid captures",
+                     "shared owned scratch rules", "shared cleanup and Finish safety/readback rules",
+                     "Stop only your processes", "in stdout/chat", "Required behavior that cannot run",
+                     "wrong interaction method or inconclusive evidence is BLOCKED")
 
     def test_remote_absence_is_read_before_delete_and_after_failure(self):
-        for phrase in ("Before deletion, explicitly read the exact remote ref",
-                       "git ls-remote --heads <head-remote> refs/heads/<branch>",
-                       "only successful empty output proves absence",
-                       "do not send a delete for an absent ref",
-                       "After a failed delete/lease, read back the exact remote ref",
-                       "verified absent means already absent",
-                       "inspection errors never prove absence"):
-            self.assertIn(phrase, self.finish)
+        self.require(self.finish, "git ls-remote --heads <head-remote> refs/heads/<branch>",
+                     "Only successful empty output proves absence", "don't delete absent refs",
+                     "After failed deletion/lease reread", "proven absent succeeds, else retain",
+                     "Errors never prove absence")
+
+    def test_skill_size_budgets(self):
+        sizes = {name: len(text.encode()) for name, text in self.skills.items()}
+        self.assertLessEqual(sum(sizes.values()), 27560)
+        for name, limit in {"kstack": 4000, "kstack-finish": 10000,
+                            "kstack-execute": 4500, "kstack-setup": 4500}.items():
+            self.assertLessEqual(sizes[name], limit, name)
 
     def test_stdlib_temporary_directory_leaves_no_owned_fixture_files(self):
         # Minimal fixture data only: demonstrate stdlib lifetime, not a shadow cleanup engine.

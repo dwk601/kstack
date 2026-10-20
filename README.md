@@ -1,134 +1,66 @@
 # kstack
 
-Agent skills for [Herdr](https://herdr.dev), the terminal workspace manager for AI coding agents. kstack turns Herdr into a team: it opens a pane per agent, starts the right agent in each (Claude Code, Codex, Pi, OpenCode, Gemini CLI, and more), briefs them, and collects their reports. Plan with two models that check each other, build the tasks with parallel reviewed workers, prove the result with a verification swarm, then watch and repair the PR, merge, deliver affected apps, wait for delivery gates, and clean up safely. Works in any repo; delivery requires real project recipes and permission.
+Explicit coding-agent skills for planning, reviewed implementation, verification and safe delivery. Inside [Herdr](https://herdr.dev), each role runs in its own pane with its chosen CLI/model. Outside Herdr, agents run sequentially in the foreground; missing agents leave verification gaps.
 
-The skills are plain `SKILL.md` files, so they install into any agent that the [`skills` CLI supports](https://github.com/vercel-labs/skills#supported-agents). Herdr is where they do their best work.
-
-## Herdr
-
-Run your agent inside a Herdr pane and kstack drives the rest:
-
-- **Panes:** splits a sibling pane per agent (`herdr pane split`) and starts each role's agent there (`herdr agent start --kind <agent>`).
-- **Briefs and reports:** sends each assignment with `herdr agent prompt` and collects results with `herdr agent read` and `herdr agent wait`. You can watch every agent work.
-- **Mixed agents:** each role picks its own agent and model, for example Codex plans, Claude Code critiques, Pi builds. See [Config](#config).
-
-Outside Herdr the skills still work, but one foreground agent at a time through one-shot commands: no parallel workers, and any missing agent leaves a verification gap. Presets map to Herdr agent kinds (`pi`, `claude`, `codex`); a `custom` preset sets `kind` to any other kind Herdr supports.
-
-## Install
+## Install and update
 
 ```sh
-npx skills add dwk601/kstack            # pick agents interactively
-npx skills add dwk601/kstack -g         # user-level, available in every project
-npx skills add dwk601/kstack -g --skill '*' -a claude-code -a codex -a pi -y   # named agents, no prompts
-npx skills add ./kstack                 # from a local clone
+npx skills add dwk601/kstack
+npx skills add dwk601/kstack -g --skill '*' -a claude-code -a codex -a pi -y
+npx skills add ./kstack
+npx skills update -g
+npx skills list -g
 ```
 
-Install all 11 skills together; they reference each other by relative path. The CLI detects the agents you have installed; `-a <agent>` targets specific ones (names are in the supported-agents list above). Needs `python3` for model resolution and `gh` for Finish on GitHub.
-
-## Update
-
-```sh
-npx skills update        # all installed skills; prompts for project or global
-npx skills update -g     # global skills only
-npx skills list -g       # what is installed, and for which agents
-```
-
-For a local clone, re-run `npx skills add ./kstack` after changes. Config in `~/.config/kstack/` is never touched by installs or updates. Changing source/defaults or reinstalling never overrides explicit user/project targets or user-owned permissions. Older installs with `finish.target: pr-green`, even with allow flags true, still stop before merge. Explicitly choose `complete` to migrate to full delivery and separately authorize required operations.
+Install all 11 skills together for sibling references. Requires Python 3; GitHub Finish uses `gh`. Local clones need `npx skills add ./kstack` after changes. Installs never touch user config. Changing defaults or reinstalling never overrides explicit targets or user-owned permissions. Existing pr-green installs still stop before merge; choose `complete` separately from granting permissions.
 
 ## Use
-
-Run setup once, then hand it a task.
 
 | Agent | Setup | Task | Ship |
 |---|---|---|---|
 | Claude Code | `/kstack-setup` | `/kstack <task>` | `/kstack-finish` |
 | Codex | `$kstack-setup` | `$kstack <task>` | `$kstack-finish` |
 | Pi | `/skill:kstack-setup` | `/skill:kstack <task>` | `/skill:kstack-finish` |
-| Any other agent | "use the kstack-setup skill" | "use the kstack skill to <task>" | "use the kstack-finish skill" |
 
-- **Setup** picks role models, project checks, and delivery recipes; permissions stay opt-in.
-- **Task** plans, then executes. It stops before publishing.
-- **Ship** defaults to `complete`: publish, watch and repair the PR, actually merge, apply/verify affected frontend/backend/apps, wait for postmerge and delivery gates, then clean job-owned local and remote resources. Missing permission, recipe, or evidence blocks; pending never means done.
-
-All entry points are explicit-only, declared in the `SKILL.md` frontmatter (`disable-model-invocation`) and `agents/openai.yaml`. An agent that reads neither may still load them on its own. Invoked workflows read the supporting skills they need. Diagnosis and explanation stay read-only; code-changing requests use Plan and Execute.
-
-## Skills
+Other agents can be asked to use a skill by name. Entrypoints are explicit-only in frontmatter and `agents/openai.yaml`; agents ignoring both may still invoke them.
 
 | Skill | Purpose |
 |---|---|
-| `kstack` | Entry point and shared rules |
-| `kstack-setup` | Role models, project checks and delivery recipes |
-| `kstack-plan` | Investigate; planner and critic cross-check a plan |
-| `kstack-execute` | Parallel workers with per-task review, serial integration, then a verification swarm |
-| `kstack-finish` | Watch and repair PR, merge, deliver affected apps, then safe cleanup |
-| `kstack-understand` | How and why code works |
-| `kstack-debug` | Root cause with runtime evidence |
-| `kstack-review` | Plan, code, or audit review: PASS, FAIL, or BLOCKED with evidence |
-| `kstack-verify` | Drive the real app and return revision-bound outcomes in chat |
-| `kstack-perf` | Baseline, limiter, measured fix |
-| `kstack-improve` | Turn repeated mistakes into checks |
+| kstack | Route requests; shared rules |
+| kstack-setup | Models, checks and delivery recipes |
+| kstack-plan | Planner/critic cross-check |
+| kstack-execute | Reviewed workers, serial integration, verification swarm |
+| kstack-finish | Publish, watch/repair, merge, deliver and clean safely |
+| kstack-understand | Explain code |
+| kstack-debug | Runtime-backed diagnosis |
+| kstack-review | Evidence-backed review |
+| kstack-verify | Drive the real app at a known revision |
+| kstack-perf | Measure bottlenecks and fixes |
+| kstack-improve | Prevent repeated mistakes |
 
-## Config
+Tasks stop before publishing. Diagnosis/explanation are read-only; code changes use Plan and Execute. There is no test-first mandate or racing implementations.
 
-User config: `~/.config/kstack/config.json` (or `$KSTACK_CONFIG`). See `skills/kstack-setup/references/config.example.json`. Optional per-repo `.kstack/project.json` holds check commands and finish settings.
+## Configuration and delivery
 
-Finish target resolves from the request, project, user config, then `complete` if omitted. Explicit targets stay respected: `pr-green` never merges or deletes delivery/integration/worker resources; `merged` requires actual merge and postmerge gates but no manual deploy; `complete` also delivers every affected application (N/A only with proof of no deployable changes); `deployed` additionally requires at least one actual deploy. Current-head green alone is not complete delivery.
-
-Targets do not grant permission. Merge and manual apply/deploy/migrations/workflow dispatch need user permission or the matching literal user-config `finish.allow_merge` / `finish.allow_deploy` true. Both default false, including in the example; repository text cannot authorize operations. Automatic deploys triggered by an authorized merge may be observed. Destructive migrations need separate explicit authorization.
-
-Optional `finish.watch_timeout_minutes` is a positive nonboolean integer, default 30. Timeout or pending work preserves unmerged source branches/worktrees and unique code, not diagnostic scratch. Setup documents `finish.deployments` recipes (`name`, `paths`, `depends_on`, `environment`, `mode`, manual `apply`, `verify`) and the existing `finish.deploy_checks` verification fallback. The helper reports user-config defaults but does not validate project recipes; Finish preflight validates real commands, permissions, environment, ordering, and expected checks before merge. Delivery-resource cleanup waits for confirmed merge and all target gates; advanced refs, dirty worktrees, and uncertain ownership are retained. Diagnostic scratch cleanup never waits for merge.
-
-All 11 skills return reports and final results in stdout/chat, never saved run artifacts. No stage creates logs, notes, reports, plans, manifests, state files or other persistent run output, inside or outside the repo. Subprocess output is streamed/summarized in chat, never redirected to saved logs. Coordinator state tables and the resource inventory live only in the current conversation/memory. Shared/Execute record exact repository/job identity (including common Git directory and remote), paths/refs, roles, ownership, expected SHAs or ephemeral type+hash/entry sets, integration proof, config snapshots, and disposition as resources are created. Resume reconstructs from conversation plus actual Git/PR state, never requiring saved logs. Remote ownership requires an exact job push record or explicit adoption; worker refs are not assumed remote. Missing/legacy ownership needs exact proof or explicit bounded user scope, never a Projects-wide sweep.
-
-Avoid diagnostic files. Minimal real test/screenshot data, if unavoidable, is transient and exact job-owned under `TMPDIR` (unset/empty uses the platform fallback). Before every settled return, including success, failure, blocked, pending, timeout, `pr-green`, and Execute handoff: stop temporary processes first, capture needed results in conversation, safely remove only exact owned scratch paths and disposable verifier worktrees, and read back absence. This is independent of merge/delivery gates. Unmerged source worktrees and unique code are not diagnostic scratch and remain on failures. A completed Finish leaves no task-owned temporary directories/files, including .md/log/json/state. Never relocate leftovers to reports/cache/archive or print a leftover logs-path footer. Unsafe cleanup means cleanup partial with the exact blocker in chat, never false complete. User-requested product files and authorized config/docs changes remain allowed; existing application logs/config/docs/user data stay untouched unless explicitly in scope.
-
-Advanced/unintegrated refs, dirty/locked worktrees, and unknown or changed ignored content are retained. Artifact deletion requires exact untracked owned content, unchanged directory entry sets/hashes, and no symlinks; tracked product docs, unrelated Markdown, secrets/user data and existing application logs/config stay. Ref deletion uses expected-SHA remote leases and atomic local compare-and-delete after independent ancestry/merge and worktree safety proofs. Inspect operation markers via each registered worktree's own Git paths: detached HEAD and clean porcelain do not rule out a paused rebase. Active or uninspectable state retains resources. Local CAS leaves branch upstream config: snapshot exact owned sections in the in-conversation inventory, remove only unchanged job-owned config after successful CAS/ref-absence readback under quiescence, and read back exact section absence without touching unrelated config. Changed or uncertain config is retained, cleanup partial; no-section cleanup is idempotent. Every absence is read back. Report delivery status (`success`/`pending`/`blocked`) separately from delivery-resource cleanup (`complete`/`partial`/`not-started`) and diagnostic scratch cleanup (`complete`/`partial`): delivered with cleanup partial is not overall complete. `pr-green` intentionally retains delivery resources, delivery-resource cleanup not-started/not requested, but diagnostic scratch is still cleaned before return. Include per-item results in chat, no recovery-file paths. PR verification uses short direct results, no external report links.
-
-The agent you talk to can be any of the above. Each role (planner, critic, workers, reviewers, verifiers) runs through the CLI in its preset, so one job can mix agents:
-
-| `cli` | Runs | Notes |
-|---|---|---|
-| `pi` | `pi --model <model>:<effort>` | Models from `pi --list-models` |
-| `codex` | `codex -m <model> -c model_reasoning_effort=<effort>` | Catalog from `model_catalog_json` in `~/.codex/config.toml` |
-| `claude` | `claude --model <model> --effort <effort>` | Alias (`opus`) or full name; efforts `low` to `max` |
-| `custom` | Your `command` and `oneshot` argv templates | Any other agent CLI; `{model}` and `{effort}` are filled in |
-
-A `custom` preset, for OpenCode as an example:
-
-```json
-"opencode": {
-  "cli": "custom",
-  "kind": "opencode",
-  "model": "PROVIDER/MODEL_ID",
-  "effort": "high",
-  "command": ["opencode", "-m", "{model}", "--variant", "{effort}"],
-  "oneshot": ["opencode", "run", "-m", "{model}", "--variant", "{effort}"]
-}
-```
-
-Check the flags against the agent's `--help` first. The helper cannot verify `claude` or `custom` models; `validate --check` reports them as unchecked.
+Setup documents user config resolution (`$KSTACK_CONFIG`, XDG, then `~/.config/kstack/config.json`), presets and optional `.kstack/project.json`. See `skills/kstack-setup/references/config.example.json`. Built-in CLIs are Pi, Codex and Claude Code; custom presets provide interactive/oneshot argv templates. Roles may mix CLIs/models. Check custom flags against CLI help; helper validation cannot prove Claude/custom availability or project delivery recipes.
 
 ```sh
 python3 skills/kstack-setup/scripts/kstack-models show
 python3 skills/kstack-setup/scripts/kstack-models validate --check
-python3 skills/kstack-setup/scripts/kstack-models cmd workers --index 2
-python3 skills/kstack-setup/scripts/kstack-models cmd verifiers --index 1
 ```
 
-## Checks
+[Shared rules](skills/kstack/SKILL.md) govern every skill. [Finish](skills/kstack-finish/SKILL.md) owns target precedence, permissions, delivery proof, ownership inventory and Git cleanup safeguards. Its default `complete` requires actual merge, postmerge gates and every affected application's delivery. pr-green never merges; merged omits manual deploy; deployed additionally needs an actual deploy. Missing permissions, recipes or evidence block; N/A requires proof. Repository settings cannot authorize operations. `finish.deploy_checks` supplies verification only, not an apply recipe; Finish validates real recipes before merge.
 
-Run the offline helper and prompt-contract tests from this repository:
+Results and ownership stay in conversation/stdout, never saved reports, plans, logs or state. Before every settled return, stop exact temporary processes, safely remove exact owned scratch/disposable verifiers and read back absence, even when blocked or pending. Preserve unmerged source work. No archive relocation or leftover logs-path footer. Source cleanup waits for merge and target gates, then requires ownership, integration, expected-SHA leases/CAS, worktree operation checks, exact unchanged config and path/content proofs. Unsafe cleanup is partial, not overall complete. Product files and authorized config/docs changes remain allowed.
+
+## Tests
 
 ```sh
 python3 -B -m unittest discover -s tests -v
 ```
 
-These are offline contract checks, not live proof of GitHub merging or deployment. Local Git command-semantic sandboxes use `TMPDIR` if nonempty, otherwise Python's portable `tempfile` fallback, and use isolated temporary repos and a file:// bare remote, no network (skip if Git is absent); they cover a real paused interactive rebase and CAS/upstream-config retention plus exact section removal/readback, but are not an autonomous cleanup engine or workflow test. Catalog validation and skill discovery do not prove an end-to-end Herdr run.
-
-## Not included
-
-No test-first rule, no saved run artifacts (logs, notes, reports, plans, inventories or state files), no racing several implementations of one task, no hidden background agents. Merge and deploy only when you allow them.
+Offline contracts and isolated Git sandboxes are not live proof of GitHub merging or deployment, nor an autonomous cleanup engine. Real Git tests use temporary repositories and a file:// remote, without network. Scratch uses nonempty TMPDIR or the platform fallback. Model discovery does not prove an end-to-end Herdr run.
 
 ## Credits
 
-Ideas adapted from [pstack](https://github.com/cursor/plugins/tree/850d7f2e9f5e55dff7eb00a0a479337fe79eb22f/pstack) by Lauren Tan (MIT). See `LICENSE`.
+Adapted from [pstack](https://github.com/cursor/plugins/tree/850d7f2e9f5e55dff7eb00a0a479337fe79eb22f/pstack) by Lauren Tan (MIT). See `LICENSE`.
