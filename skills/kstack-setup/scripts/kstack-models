@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 ROLES = ("planner", "plan_critic", "workers", "reviewer", "verifiers", "fixer")
+LIST_ROLES = ("verifiers",)  # every other role takes exactly one preset name
 CLIS = ("pi", "codex", "claude", "custom")
 PI_EFFORTS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
 CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
@@ -130,6 +131,9 @@ def problems(cfg):
                 out.append("model %s: kind must be a string" % name)
     for role in ROLES:
         names = preset_names(cfg, role)
+        if role not in LIST_ROLES and isinstance(section(cfg, "roles").get(role), list):
+            out.append("role %s: must be one preset name" % role)
+            continue
         if not all(isinstance(n, str) for n in names):
             out.append("role %s: must be a preset name or a list of preset names" % role)
             continue
@@ -148,24 +152,6 @@ def problems(cfg):
     for key in ("allow_merge", "allow_deploy"):
         if key in finish and not isinstance(finish[key], bool):
             out.append("finish.%s: must be true or false" % key)
-    return out
-
-
-def family(model_id):
-    """Warning-only key so `openai/gpt-x` (pi) and `gpt-x` (codex) compare equal. Never used in argv."""
-    return model_id.rsplit("/", 1)[-1].lower()
-
-
-def warnings(cfg):
-    models, out = cfg.get("models") or {}, []
-
-    def ids(role):
-        return {family(models[n]["model"]) for n in preset_names(cfg, role) if n in models}
-
-    if ids("planner") & ids("plan_critic"):
-        out.append("planner and plan_critic use the same model; the cross-check loses diversity")
-    if ids("workers") & (ids("reviewer") | ids("verifiers")):
-        out.append("a reviewer or verifier shares a model with a worker; prefer a different one")
     return out
 
 
@@ -245,7 +231,7 @@ def main():
     v.add_argument("--check", action="store_true", help="also check local model catalogs")
     c = sub.add_parser("cmd")
     c.add_argument("role", choices=ROLES)
-    c.add_argument("--index", type=int, default=0, help="task number; rotates the workers pool")
+    c.add_argument("--index", type=int, default=0, help="verifier lane number; rotates the verifiers list")
     c.add_argument("--herdr", metavar="NAME", help="print a herdr agent start command")
     c.add_argument("--pane", help="herdr pane id (with --herdr)")
     c.add_argument("--oneshot", action="store_true",
@@ -271,7 +257,7 @@ def main():
 
     if a.action == "validate":
         bad, notes = availability(cfg) if a.check else ([], [])
-        for n in warnings(cfg) + notes:
+        for n in notes:
             print("warning: %s" % n)
         if bad:
             sys.exit("kstack: unusable models in %s\n  %s" % (config_path(), "\n  ".join(bad)))

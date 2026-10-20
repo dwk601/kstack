@@ -16,7 +16,7 @@ Resolve base from request, project, then default branch. Record SHA; create `kst
 
 ## 2. Build
 
-Dispatch all ready tasks after dependencies integrate; no worker cap. Each owns a branch/worktree from integration and uses `python3 "$MODELS" cmd workers --index <task-number>`.
+Dispatch all ready tasks after dependencies integrate; no worker cap. Each owns a branch/worktree from integration and uses `python3 "$MODELS" cmd workers`.
 
 Brief goal, files, acceptance, check, base SHA, dependencies and report format. No competing implementations or bare "continue". Workers implement/check/commit using Debug, Perf or Verify as appropriate. Return `task | SHA | files | check + result | assumptions`.
 
@@ -40,7 +40,7 @@ Independent lanes use `git worktree add --detach <path> <sha>` at frozen head an
 
 | Lane | Evidence |
 |---|---|
-| Audit | Two focused Review contexts; models may match |
+| Audit | Two focused Review contexts |
 | Gates | Full checks/lint/typecheck once at head; coordinator may run |
 | Live | Verify every changed user-visible behavior; compare one main scenario to base |
 | Perf | Measure speed targets without editing |

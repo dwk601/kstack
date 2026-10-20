@@ -24,9 +24,7 @@
   "roles": {
     "planner": "deep",
     "plan_critic": "critic",
-    "workers": [
-      "builder"
-    ],
+    "workers": "builder",
     "reviewer": "checker",
     "verifiers": [
       "critic",

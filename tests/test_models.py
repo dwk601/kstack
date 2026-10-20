@@ -32,7 +32,7 @@ BASE = {
     "roles": {
         "planner": "deep",
         "plan_critic": "critic",
-        "workers": ["builder", "builder2"],
+        "workers": "builder",
         "reviewer": "checker",
         "verifiers": ["critic", "checker", "deep"],
         "fixer": "builder",
@@ -116,11 +116,18 @@ class ProblemsTest(unittest.TestCase):
         self.assertIn("model critic: must be an object", errs)
 
     def test_malformed_role_values_reported(self):
-        msg = "role workers: must be a preset name or a list of preset names"
+        msg = "role verifiers: must be a preset name or a list of preset names"
         for bad in ([{"name": "builder"}], [["builder"]], 7, True, ["builder", None]):
-            errs = km.problems(cfg(roles__workers=bad))
+            errs = km.problems(cfg(roles__verifiers=bad))
             self.assertIn(msg, errs, bad)
-        self.assertIn("role workers: not set", km.problems(cfg(roles__workers=[])))
+        self.assertIn("role verifiers: not set", km.problems(cfg(roles__verifiers=[])))
+        for role in ("planner", "plan_critic", "workers", "reviewer", "fixer"):
+            for bad in (["builder"], ["builder", "builder2"], []):
+                self.assertIn("role %s: must be one preset name" % role,
+                              km.problems(cfg(**{"roles__" + role: bad})), (role, bad))
+        for bad in (7, True):
+            self.assertIn("role workers: must be a preset name or a list of preset names",
+                          km.problems(cfg(roles__workers=bad)), bad)
         self.assertIn("role fixer: unknown model 'nope'", km.problems(cfg(roles__fixer="nope")))
 
     def test_target_still_validated(self):
@@ -278,10 +285,9 @@ class CmdCliTest(unittest.TestCase):
                 self.assertEqual(finish, c["finish"])
         self.assertIs(self.shown_finish(cfg(finish__allow_deploy=True))["allow_deploy"], True)
 
-    def test_workers_pool_rotates_with_index(self):
-        out = [run_cli(cfg(), "cmd", "workers", "--index", str(i)).stdout.strip() for i in range(4)]
-        self.assertEqual(out, ["pi --model prov/builder-1:medium",
-                               "pi --model prov/builder-2:low --tools read"] * 2)
+    def test_workers_use_one_preset(self):
+        out = [run_cli(cfg(), "cmd", "workers", "--index", str(i)).stdout.strip() for i in range(3)]
+        self.assertEqual(out, ["pi --model prov/builder-1:medium"] * 3)
 
     def test_verifier_lanes_rotate_across_pool_no_cap(self):
         out = [run_cli(cfg(), "cmd", "verifiers", "--index", str(i)).stdout.strip() for i in range(3)]
@@ -318,34 +324,19 @@ class CmdCliTest(unittest.TestCase):
                     self.assertIn("kstack: invalid config", r.stderr, (text, args))
 
 
-class WarningsTest(unittest.TestCase):
-    def test_diverse_config_has_no_warnings(self):
-        self.assertEqual(km.warnings(cfg()), [])
-
-    def test_same_model_configs_allowed_with_warnings(self):
+class SharedModelTest(unittest.TestCase):
+    def test_same_model_configs_are_valid_and_silent(self):
         c = cfg(roles__plan_critic="deep", roles__reviewer="builder", roles__verifiers=["critic", "critic"])
         self.assertEqual(km.problems(c), [])
-        w = km.warnings(c)
-        self.assertIn("planner and plan_critic use the same model; the cross-check loses diversity", w)
-        self.assertIn("a reviewer or verifier shares a model with a worker; prefer a different one", w)
-        self.assertNotIn("the two audit lanes run on one model; list two different verifiers first", w)
         r = run_cli(c, "validate")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(r.stdout.count("warning:"), 2)
+        self.assertNotIn("warning:", r.stdout)
 
-    def test_single_verifier_is_allowed_without_warning(self):
+    def test_single_verifier_is_allowed(self):
         c = cfg(roles__verifiers=["critic"])
         self.assertEqual(km.problems(c), [])
-        self.assertEqual(km.warnings(c), [])
         out = [run_cli(c, "cmd", "verifiers", "--index", str(i)).stdout.strip() for i in range(2)]
         self.assertEqual(out, ["pi --model prov/critic-1:high"] * 2)
-
-    def test_equivalent_ids_across_clis_warn_without_rewrite(self):
-        c = cfg(models__critic={"cli": "pi", "model": "openai/GPT-Deep", "effort": "high"})
-        self.assertIn("planner and plan_critic use the same model; the cross-check loses diversity",
-                      km.warnings(c))
-        self.assertEqual(c["models"]["critic"]["model"], "openai/GPT-Deep")
-        self.assertEqual(km.argv(c["models"]["critic"]), ["pi", "--model", "openai/GPT-Deep:high"])
 
 
 PI_LISTING = ("provider      model           context\n"

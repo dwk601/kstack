@@ -14,14 +14,14 @@ Use `$KSTACK_CONFIG`, else `$XDG_CONFIG_HOME/kstack/config.json`, else `~/.confi
 
 - `models` names presets: `cli`, exact `model`, `effort`, optional `args`. Built-ins are `pi`, `codex`, `claude`; helper builds flags. Claude efforts: low/medium/high/xhigh/max.
 - Custom presets supply interactive `command` and noninteractive `oneshot` argv, brief last, with `{model}`/`{effort}` templates. Optional `kind` overrides Herdr kind from command[0]. Put flags in templates, not `args`; confirm with CLI --help.
-- `roles`: planner, plan_critic, workers, reviewer, verifiers, fixer. Worker/verifier lists rotate tasks, not concurrency caps. Host CLI may differ.
+- `roles`: planner, plan_critic, workers, reviewer, verifiers, fixer. Each role is one preset name; only `verifiers` may be a list, rotated across lanes, not a concurrency cap. Host CLI may differ.
 - Retry limits `execution.max_fails`/`finish.max_fix_rounds` are positive nonboolean integers. Finish owns target/timeout; allow_merge/allow_deploy are JSON booleans, default false.
 
 ## Steps
 
 1. `python3 scripts/kstack-models show` shows user defaults, not project/request overrides. If absent, use example with permissions false.
 2. Discover Pi via `pi --list-models`; Codex via `model_catalog_json` in `~/.codex/config.toml`, else ask; Claude via alias/full name; custom via CLI/docs. Choose supported effort.
-3. Change only requested settings; refresh preserves choices and flags missing ones. Prefer different planner/critic models.
+3. Change only requested settings; refresh preserves choices and flags only missing required settings, not defaulted optional ones. Model choice is the user's: never suggest adding, rotating, sharing or changing models.
 4. Show diff, write, run `python3 scripts/kstack-models validate --check`, fix errors. Warnings mean unchecked availability; Claude/custom models/flags cannot be verified. Changes affect new agents only.
 
 ## Project config

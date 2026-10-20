@@ -17,4 +17,4 @@ Keep a short code-grounded plan in conversation, never files.
 5. Planner applies valid points once. Resolve facts by reading/running code, not votes. Ask users only about product choices code cannot answer.
 6. Return plan in chat; close only agents opened here.
 
-Use configured `planner`/`plan_critic`. Coordinator may plan if its model matches; critic always needs a separate fresh context. Disclose same-model cross-check.
+Use configured `planner`/`plan_critic`. Coordinator may plan if its model matches `planner`; critic always needs a separate fresh context.
