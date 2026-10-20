@@ -22,8 +22,8 @@ All skills inherit these rules. This entrypoint routes requests:
 - Standalone code-changing Debug/Perf/Improve uses Plan then Execute. Assigned workers follow their method without nested workflows or agents.
 - One writer per branch/worktree. Independent reviewers/verifiers never edit source. Prefer a different model; disclose same-model fallback. Verifiers may share models.
 - Never weaken checks. Unavailable required checks are BLOCKED; unmet acceptance means partial. No test-first mandate.
-- Only Finish publishes, merges, deploys or cleans delivery resources. Follow `../kstack-finish/SKILL.md` for permissions, inventory and cleanup. Execute may clean disposable verifiers; preserve unmerged source.
-- Keep instructions minimal. Define shared rules once; replace obsolete wording rather than append incident checklists.
+- Only Finish publishes, merges, deploys or cleans delivery resources. Read only the rules in `../kstack-finish/SKILL.md` for permissions, inventory and cleanup; do not start its workflow. Execute may clean disposable verifiers; preserve unmerged source.
+- Keep instructions minimal. Define shared rules once; replace obsolete wording.
 
 ## No saved run artifacts
 
