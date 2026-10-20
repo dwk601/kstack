@@ -26,7 +26,7 @@ Use `$KSTACK_CONFIG`, else `$XDG_CONFIG_HOME/kstack/config.json`, else `~/.confi
 
 ## Project config
 
-Repo-root `.kstack/project.json` optionally sets `base`, `checks`, real app-driving `verify` and `finish` overrides. It cannot grant permission.
+Repo-root `.kstack/project.json` optionally sets `base`, `checks`, real app-driving `verify` and `finish` overrides.
 
 `finish.deployments` lists real scripts/CI/docs recipes, not guesses:
 
@@ -40,8 +40,6 @@ Repo-root `.kstack/project.json` optionally sets `base`, `checks`, real app-driv
 | `apply` | Manual command; auto needs identified merge-triggered recipe |
 | `verify` | Exact delivered revision/environment evidence |
 
-`finish.deploy_checks` is a verification evidence fallback, not an apply recipe. The helper does not validate project recipes; Finish preflight checks coverage, dependencies/migrations, permissions and revision/environment proof before merge.
+`finish.deploy_checks` is a verification evidence fallback, not an apply recipe. The helper does not validate project recipes; Finish preflight checks them before merge.
 
-## Existing installs
-
-Explicit pr-green stops even with allow flags. Choose `complete` separately from permission. Defaults/reinstalling never overrides targets or user-owned permissions. Refresh via README; local clones need `npx skills add ./kstack`.
+pr-green and `complete` are targets, not permission; reinstalling never overrides them or user-owned permissions. Local clones need `npx skills add ./kstack`.
