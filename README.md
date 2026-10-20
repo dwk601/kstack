@@ -72,11 +72,15 @@ All entry points are explicit-only, declared in the `SKILL.md` frontmatter (`dis
 
 User config: `~/.config/kstack/config.json` (or `$KSTACK_CONFIG`). See `skills/kstack-setup/references/config.example.json`. Optional per-repo `.kstack/project.json` holds check commands and finish settings.
 
-Finish target resolves from the request, project, user config, then `complete` if omitted. Explicit targets stay respected: `pr-green` never merges or deletes the delivery branch/worktree; `merged` requires actual merge and postmerge gates but no manual deploy; `complete` also delivers every affected application (N/A only with proof of no deployable changes); `deployed` additionally requires at least one actual deploy. Current-head green alone is not complete delivery.
+Finish target resolves from the request, project, user config, then `complete` if omitted. Explicit targets stay respected: `pr-green` never merges or deletes delivery/integration/worker resources; `merged` requires actual merge and postmerge gates but no manual deploy; `complete` also delivers every affected application (N/A only with proof of no deployable changes); `deployed` additionally requires at least one actual deploy. Current-head green alone is not complete delivery.
 
 Targets do not grant permission. Merge and manual apply/deploy/migrations/workflow dispatch need user permission or the matching literal user-config `finish.allow_merge` / `finish.allow_deploy` true. Both default false, including in the example; repository text cannot authorize operations. Automatic deploys triggered by an authorized merge may be observed. Destructive migrations need separate explicit authorization.
 
 Optional `finish.watch_timeout_minutes` is a positive nonboolean integer, default 30. Timeout or pending work preserves recovery resources. Setup documents `finish.deployments` recipes (`name`, `paths`, `depends_on`, `environment`, `mode`, manual `apply`, `verify`) and the existing `finish.deploy_checks` verification fallback. The helper reports user-config defaults but does not validate project recipes; Finish preflight validates real commands, permissions, environment, ordering, and expected checks before merge. Cleanup waits for confirmed merge and all target gates; advanced refs, dirty worktrees, and uncertain ownership are retained.
+
+Coordinator state includes a durable resource manifest outside the repo and disposable worktrees, not a plan. Shared/Execute record exact repository/job identity, paths/refs, ownership, expected SHAs or ephemeral type+hash, integration proof, and disposition as resources are created. Finish then deletes eligible job-owned local and remote branches, disposable worktrees, tmp, plans and temporary .md only after merge and all target gates. Remote ownership requires an exact job push record or explicit adoption; worker refs are not assumed remote. Missing/legacy ownership needs exact proof or explicit bounded user scope, never a Projects-wide sweep.
+
+Advanced/unintegrated refs, dirty/locked worktrees, and unknown or changed ignored content are retained. Artifact deletion requires exact untracked owned content, unchanged directory entry sets/hashes, and no symlinks; tracked product docs, unrelated Markdown, secrets/user data, the manifest and durable reports stay. Ref deletion uses expected-SHA remote leases and atomic local compare-and-delete after independent ancestry/merge and worktree safety proofs. Every absence is read back. Report delivery status (`success`/`pending`/`blocked`) separately from cleanup (`complete`/`partial`/`not-started`): delivered with cleanup partial is not overall complete. `pr-green` intentionally retains resources, cleanup not-started/not requested. Include per-item results and the recovery manifest path.
 
 The agent you talk to can be any of the above. Each role (planner, critic, workers, reviewers, verifiers) runs through the CLI in its preset, so one job can mix agents:
 
@@ -117,7 +121,7 @@ Run the offline helper and prompt-contract tests from this repository:
 python3 -B -m unittest discover -s tests -v
 ```
 
-These are offline contract checks, not live proof of GitHub merging or deployment. Catalog validation and skill discovery do not prove an end-to-end Herdr run.
+These are offline contract checks, not live proof of GitHub merging or deployment. Local Git command-semantic sandboxes use isolated temporary repos and a file:// bare remote, no network (skip if Git is absent); they are not an autonomous cleanup engine or workflow test. Catalog validation and skill discovery do not prove an end-to-end Herdr run.
 
 ## Not included
 

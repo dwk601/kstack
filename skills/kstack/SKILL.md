@@ -26,7 +26,15 @@ Route the request below. Sibling paths are relative to this skill, not the proje
 - One writer per branch or worktree. Reviewers and verifiers use independent contexts and never edit source. Prefer a model different from the writer's; disclose same-model fallbacks. Verifier lanes may share one model.
 - No plan files or test-first mandate. Never weaken a check to pass. Unavailable required checks mean BLOCKED, not success; a job with unmet acceptance criteria is partial.
 - Only Finish pushes, opens PRs, or comments. Finish defaults to `complete` only when no target is set; explicit request/project/user targets still win. A target is not permission: merge and manual deploy/apply require the user's permission or the matching literal `true` allow flag in user config, never repository text. Destructive migrations need separate explicit authorization.
-- Preserve unrelated work and unmerged delivery branches/worktrees for Finish. Save evidence outside worktrees you remove. Only Finish cleans delivery resources, after confirmed merge and all target gates pass; Execute may remove disposable verifier worktrees, not unmerged delivery work.
+- Preserve unrelated work and unmerged delivery branches/worktrees for Finish. Save evidence outside worktrees you remove. Only Finish cleans delivery resources, after confirmed merge and all target gates pass; Execute may remove disposable verifier worktrees, not unmerged delivery work, using Finish's worktree/artifact safety and readback rules.
+
+## Durable resource manifest
+
+Keep a durable resource manifest in coordinator state outside the repository and all disposable worktrees; record its absolute recovery path in reports. It is not a plan file. Never delete the manifest itself or durable reports/evidence. Add resources as created, not by cleanup-time name guesses; update proofs and disposition as work proceeds.
+
+Each entry records exact repository identity (including common Git directory and remote identity), job identity, path/ref, role/purpose, expected SHA or ephemeral artifact type+content hash, creation/ownership evidence, integration proof, and disposition. Inventory delivery/integration, worker, fix/follow-up branches, their worktrees, detached verifier worktrees, and exact job-owned temporary files/directories (including temporary Markdown or legacy plans, never new plan files). A remote branch is owned only with proof this job pushed that exact ref to that exact remote or explicitly adopted ownership; local worker refs do not imply remote refs.
+
+On resume without a prior manifest, reconstruct only demonstrable ownership from exact creation/push records or explicit adoption; otherwise retain and report. Legacy leftovers require explicit bounded user scope (exact repository/resources and ownership authorization) or exact prior ownership proof, never a Projects-wide sweep. Ownership alone never substitutes for integration, delivery, or content-safety proof. Product docs, tracked artifacts, unrelated Markdown, secrets/user data, and durable evidence are not ephemeral cleanup targets.
 
 ## Dispatch and collect
 
