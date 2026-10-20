@@ -1,8 +1,10 @@
 """Offline contracts and Git semantics, not autonomous workflow/GitHub/deploy proof."""
 import os
 import re
+import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -213,6 +215,40 @@ class FinishContractTests(unittest.TestCase):
                        "never globally pruned", "An absent path with remaining metadata is not done"):
             self.assertIn(phrase, cleanup)
 
+    def test_local_cas_requires_all_worktree_operation_state_checks(self):
+        cleanup = self.stage(6, "Cleanup")
+        for marker in ("rebase-merge", "rebase-apply", "BISECT_START", "MERGE_HEAD",
+                       "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer"):
+            self.assertIn("`" + marker + "`", cleanup)
+        for phrase in ("Inspect all registered worktrees, including the main worktree",
+                       "git -C <worktree> rev-parse --git-path <marker>",
+                       "Resolve relative results against that worktree; lstat each exact path",
+                       "detached HEAD and clean porcelain", "active/in-progress operation",
+                       "uninspectable state", "defers local ref deletion",
+                       "all per-worktree operation markers from step 3",
+                       "quiescent across inspection, deletion, config cleanup and readback"):
+            self.assertIn(phrase, cleanup)
+
+    def test_branch_config_cleanup_requires_unchanged_owned_section_and_readback(self):
+        cleanup = self.stage(6, "Cleanup")
+        for phrase in ("Before CAS, record an exact `branch.<name>` config section snapshot",
+                       "all keys/values including duplicates, origins/scopes and owning file",
+                       "exact section identity, not a regex/prefix",
+                       "equality to the manifest's recorded config snapshot",
+                       "after successful CAS and exact ref-absence readback",
+                       "remove only that unchanged job-owned section",
+                       "git config --file <owning-file> --remove-section branch.<name>",
+                       "Never remove unrelated config", "changed config",
+                       "retain config and report cleanup partial",
+                       "already absent section is idempotent success after readback",
+                       "A failed CAS never authorizes config removal",
+                       "Read back exact `branch.<name>` section absence across config origins/scopes",
+                       "not merely absence of its upstream keys"):
+            self.assertIn(phrase, cleanup)
+        for text in (self.shared, self.execute):
+            self.assertIn("origins/scopes and owning file", text)
+            self.assertIn("duplicates", text)
+
     def test_artifact_cleanup_requires_exact_untracked_identity(self):
         cleanup = self.stage(6, "Cleanup")
         for phrase in ("explicitly job-owned ephemeral file type+hash",
@@ -263,7 +299,7 @@ class GitCleanupSemanticsTests(unittest.TestCase):
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(
-            prefix="kstack-git-", dir=os.environ.get("TMPDIR") or tempfile.gettempdir())
+            prefix="kstack-git-", dir=os.environ["TMPDIR"])
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
         self.repo = self.root / "repo"
@@ -291,10 +327,10 @@ class GitCleanupSemanticsTests(unittest.TestCase):
         self.git("remote", "add", "origin", self.remote.as_uri())
         self.git("push", "origin", "main")
 
-    def git(self, *args, cwd=None, check=True):
+    def git(self, *args, cwd=None, check=True, env=None):
         return subprocess.run(
             [shutil.which("git"), "-c", "core.hooksPath=" + str(self.hooks), *args],
-            cwd=cwd or self.repo, env=self.env, text=True,
+            cwd=cwd or self.repo, env=self.env if env is None else env, text=True,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=check, timeout=15)
 
     def commit(self, relative, content, cwd=None):
@@ -304,6 +340,15 @@ class GitCleanupSemanticsTests(unittest.TestCase):
         self.git("add", "--", relative, cwd=cwd)
         self.git("commit", "-m", "sandbox change", cwd=cwd)
         return self.git("rev-parse", "HEAD", cwd=cwd).stdout.strip()
+
+    def local_config_entries(self):
+        # NUL entries preserve duplicate keys and multiline values in the sandbox's one file.
+        return tuple(self.git("config", "--local", "--no-includes", "--null", "--list")
+                     .stdout.rstrip("\0").split("\0"))
+
+    def branch_config(self, name):
+        return tuple(entry for entry in self.local_config_entries()
+                     if entry.partition("\n")[0].rpartition(".")[0] == "branch." + name)
 
     def test_integrated_worker_cleanup_and_idempotent_absence(self):
         self.git("switch", "-c", "worker")
@@ -380,6 +425,105 @@ class GitCleanupSemanticsTests(unittest.TestCase):
         self.assertTrue(worktree.is_dir())
         self.assertEqual(self.git("rev-parse", "worker").stdout.strip(), self.base)
 
+    def test_paused_interactive_rebase_has_hidden_worktree_association(self):
+        worktree = self.root / "rebasing"
+        self.git("worktree", "add", "-b", "worker", str(worktree), self.base)
+        tip = self.commit("worker.txt", "reviewed worker change\n", cwd=worktree)
+        editor = shlex.join([sys.executable, "-c",
+                            "import pathlib, sys; p = pathlib.Path(sys.argv[1]); "
+                            "p.write_text(p.read_text().replace('pick ', 'edit ', 1))"])
+        self.git("rebase", "-i", self.base, cwd=worktree,
+                 env={**self.env, "GIT_SEQUENCE_EDITOR": editor})
+        self.assertEqual(self.git("symbolic-ref", "--quiet", "HEAD", cwd=worktree,
+                                  check=False).returncode, 1)
+        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all",
+                                  "--ignored", cwd=worktree).stdout, "")
+        porcelain = self.git("worktree", "list", "--porcelain").stdout
+        self.assertIn("detached", porcelain)
+        self.assertNotIn("branch refs/heads/worker", porcelain)
+        refusal = self.git("branch", "-d", "worker", check=False)
+        self.assertNotEqual(refusal.returncode, 0)
+        self.assertIn(str(worktree), refusal.stderr)
+        # Inspect actual Git paths in EVERY registered worktree, not the common Git dir.
+        registered = [Path(field[len("worktree "):]) for field in
+                      self.git("worktree", "list", "--porcelain", "-z").stdout.split("\0")
+                      if field.startswith("worktree ")]
+        self.assertEqual(set(registered), {self.repo, worktree})
+        found = {}
+        for directory in registered:
+            for marker in ("rebase-merge", "rebase-apply", "BISECT_START", "MERGE_HEAD",
+                           "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer"):
+                path = Path(self.git("rev-parse", "--git-path", marker,
+                                     cwd=directory).stdout.strip())
+                path = directory / path  # Absolute Git paths remain absolute.
+                try:
+                    path.lstat()
+                except FileNotFoundError:
+                    continue
+                found[directory, marker] = path
+        self.assertEqual(set(found), {(worktree, "rebase-merge")})
+        self.assertEqual((found[worktree, "rebase-merge"] / "head-name").read_text(),
+                         "refs/heads/worker\n")
+        # Detection retains the branch despite clean detached porcelain; do not use CAS here.
+        self.assertEqual(self.git("rev-parse", "worker").stdout.strip(), tip)
+        self.git("rebase", "--abort", cwd=worktree)
+
+    def test_cas_leaves_upstream_config_until_exact_section_removal_and_readback(self):
+        self.git("branch", "worker", self.base)
+        self.git("push", "-u", "origin", "worker")
+        self.git("config", "--local", "--add", "branch.worker.note", "first\nline")
+        self.git("config", "--local", "--add", "branch.worker.note", "second")
+        # Prefix-related sections and other config must not be swept up by section matching.
+        self.git("config", "--local", "branch.worker.extra.remote", "unrelated")
+        self.git("config", "--local", "branch.other.remote", "also-unrelated")
+        snapshot = self.branch_config("worker")
+        self.assertEqual(len(snapshot), 4)
+        unrelated = tuple(e for e in self.local_config_entries() if e not in snapshot)
+        config_file = self.repo / ".git" / "config"
+        self.git("update-ref", "-d", "refs/heads/worker", self.base)
+        self.assertEqual(self.git("show-ref", "--verify", "--quiet", "refs/heads/worker",
+                                  check=False).returncode, 1)
+        self.assertEqual(self.branch_config("worker"), snapshot)
+        self.assertIn("branch.worker.remote\norigin", snapshot)
+        self.assertIn("branch.worker.merge\nrefs/heads/worker", snapshot)
+        # No concurrent writers in this sandbox: recheck unchanged section, then exact removal.
+        self.assertEqual(self.branch_config("worker"), snapshot)
+        self.git("config", "--file", str(config_file), "--remove-section", "branch.worker")
+        for _ in range(2):
+            self.assertEqual(self.branch_config("worker"), ())
+            self.assertEqual(self.local_config_entries(), unrelated)
+            for key in ("remote", "merge", "note"):
+                self.assertEqual(self.git("config", "--local", "--get-all",
+                                          "branch.worker." + key, check=False).returncode, 1)
+        self.assertEqual(self.branch_config("worker.extra"),
+                         ("branch.worker.extra.remote\nunrelated",))
+
+    def test_changed_branch_config_is_retained_after_cas(self):
+        self.git("branch", "worker", self.base)
+        self.git("push", "-u", "origin", "worker")
+        snapshot = self.branch_config("worker")
+        self.git("update-ref", "-d", "refs/heads/worker", self.base)
+        self.assertEqual(self.git("show-ref", "--verify", "--quiet", "refs/heads/worker",
+                                  check=False).returncode, 1)
+        self.git("config", "--local", "branch.worker.remote", "changed-by-another-writer")
+        changed = self.branch_config("worker")
+        self.assertNotEqual(changed, snapshot)
+        # A mismatch cannot authorize removal; demonstrate retained config, not a cleanup engine.
+        self.assertIn("branch.worker.remote\nchanged-by-another-writer", changed)
+        self.assertEqual(self.branch_config("worker"), changed)
+
+    def test_branch_config_no_section_is_idempotent_after_cas(self):
+        self.git("branch", "worker", self.base)
+        self.assertEqual(self.branch_config("worker"), ())
+        unrelated = self.local_config_entries()
+        self.git("update-ref", "-d", "refs/heads/worker", self.base)
+        for _ in range(2):
+            self.assertEqual(self.git("show-ref", "--verify", "--quiet", "refs/heads/worker",
+                                      check=False).returncode, 1)
+            self.assertEqual(self.branch_config("worker"), ())
+            self.assertEqual(self.local_config_entries(), unrelated)
+        # Absence is read-back success: no blind --remove-section (which would error).
+
     def test_unique_worker_commit_is_not_integrated(self):
         self.git("switch", "-c", "worker")
         tip = self.commit("unique.txt", "not delivered\n")
@@ -426,6 +570,9 @@ class GitCleanupSemanticsTests(unittest.TestCase):
         entries = self.git("worktree", "list", "--porcelain").stdout
         self.assertIn("worktree " + str(worktree), entries)
         self.assertIn("prunable", entries)
+        # Its own Git paths cannot be inspected: absence is not proof of idle operation state.
+        with self.assertRaises(FileNotFoundError):
+            self.git("rev-parse", "--git-path", "rebase-merge", cwd=worktree)
         # Retain/report the exact metadata entry: no global prune in this sandbox.
         self.assertIn(str(worktree), self.git("worktree", "list", "--porcelain").stdout)
 
