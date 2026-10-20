@@ -14,4 +14,4 @@ Shared rules: read `../kstack/SKILL.md` first. Measurement-only requests and ver
 4. Try the cheapest idea first: skip the work, avoid repeating it, do less, do it later, batch it, run it in parallel, then make it faster. Stop when the target is met.
 5. Measure again the same way: same build mode, data, and machine load. Compare like-for-like runs, alternating base and head. If base lacks the feature, report that and use an absolute head budget, not a fabricated speedup. A change inside run-to-run noise is inconclusive.
 
-Report: before, after, delta, run count and range, the limiter, and the artifact path. Say inconclusive when it is.
+Report in stdout/chat: before, after, delta, run count and range, the limiter, and revision-bound profiler/trace observations, not artifact paths. Say inconclusive when it is. Avoid saved profiles; unavoidable temporary captures follow the shared exact-owned scratch cleanup rule before every settled return.

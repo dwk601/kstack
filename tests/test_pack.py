@@ -146,7 +146,7 @@ class FinishContractTests(unittest.TestCase):
                        "exact API merge proof, unchanged recorded tip",
                        "no unmerged commits beyond the verified PR", "No broad prune, clean, or reset",
                        "Read back local refs, `git worktree list`, remote refs",
-                       "cleanup skipped", "evidence outside removed worktrees",
+                       "cleanup skipped", "Capture needed evidence in conversation first",
                        "git update-ref -d refs/heads/<branch> <expected-sha>",
                        "update-ref has no Git branch safety checks", "independent proofs are mandatory",
                        "stale expected-old SHA must reject deletion", "do not retry with the new tip",
@@ -157,14 +157,13 @@ class FinishContractTests(unittest.TestCase):
         self.assertIn("only its clean, idle, disposable verifier worktrees", self.execute)
         self.assertIn("Only Finish cleans delivery resources", self.shared)
 
-    def test_durable_manifest_records_resources_and_ownership_as_created(self):
+    def test_conversation_inventory_records_resources_and_ownership_as_created(self):
         for text, role in ((self.shared, "role/purpose"), (self.execute, "role"),
                            (self.finish, "purpose")):
-            for phrase in ("manifest", "outside", "path/ref", role, "SHA", "hash",
+            for phrase in ("in-conversation", "inventory", "path/ref", role, "SHA", "hash",
                            "ownership", "integration proof", "disposition"):
                 self.assertIn(phrase, text)
-        for phrase in ("outside the repository and all disposable worktrees", "not a plan file",
-                       "Never delete the manifest itself or durable reports/evidence",
+        for phrase in ("only in the current conversation/memory, not a file or external durable store",
                        "exact repository identity", "common Git directory", "job identity",
                        "Add resources as created", "not by cleanup-time name guesses",
                        "delivery/integration", "worker", "fix/follow-up branches",
@@ -176,7 +175,7 @@ class FinishContractTests(unittest.TestCase):
             self.assertIn(phrase, self.finish)
 
     def test_resume_and_legacy_adoption_are_bounded(self):
-        for phrase in ("without a prior manifest", "only demonstrable ownership",
+        for phrase in ("without a prior in-conversation inventory", "only demonstrable ownership",
                        "otherwise retain and report", "explicit bounded user scope",
                        "exact repository/resources and ownership authorization",
                        "exact prior ownership proof", "never a Projects-wide sweep",
@@ -234,7 +233,7 @@ class FinishContractTests(unittest.TestCase):
         for phrase in ("Before CAS, record an exact `branch.<name>` config section snapshot",
                        "all keys/values including duplicates, origins/scopes and owning file",
                        "exact section identity, not a regex/prefix",
-                       "equality to the manifest's recorded config snapshot",
+                       "equality to the in-conversation inventory's recorded config snapshot",
                        "after successful CAS and exact ref-absence readback",
                        "remove only that unchanged job-owned section",
                        "git config --file <owning-file> --remove-section branch.<name>",
@@ -261,7 +260,7 @@ class FinishContractTests(unittest.TestCase):
                        "no symlinks, no changed or extra entries; otherwise retain the directory",
                        "Product docs, tracked artifacts, unrelated Markdown, secrets/user data",
                        "Never delete by pattern (`tmp*`, `plan*.md`, `*.md`)",
-                       "never `git clean`", "Never delete the manifest itself or durable reports",
+                       "never `git clean`", "Read back absence of each exact owned scratch path",
                        "artifact paths", "Verify absence of each exact ref/path"):
             self.assertIn(phrase, cleanup)
 
@@ -272,7 +271,8 @@ class FinishContractTests(unittest.TestCase):
                        "Target `complete` is not the cleanup status field",
                        "delivered, cleanup partial, not overall complete",
                        "intentional retention is cleanup not-started/not requested, not failure",
-                       "per-item done/already absent/skipped reasons", "absolute recovery manifest path",
+                       "per-item done/already absent/skipped reasons", "never saved logs",
+                       "diagnostic scratch cleanup status `complete`/`partial`",
                        "not autonomous workflow, live GitHub or app deployment"):
             self.assertIn(phrase, report)
         self.assertIn("retain integration/worker resources too", self.finish)
@@ -293,13 +293,139 @@ class FinishContractTests(unittest.TestCase):
         self.assertIn("not live proof of GitHub merging or deployment", self.readme)
 
 
+class RunArtifactContractTests(unittest.TestCase):
+    """Written no-artifact contracts plus stdlib lifetime proof, not a cleanup engine."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.skills = {name: (ROOT / "skills" / name / "SKILL.md").read_text()
+                      for name in NAMES}
+        cls.shared = cls.skills["kstack"]
+        cls.finish = cls.skills["kstack-finish"]
+        cls.execute = cls.skills["kstack-execute"]
+        cls.verify = cls.skills["kstack-verify"]
+        cls.readme = (ROOT / "README.md").read_text()
+
+    def test_all_eleven_skills_inherit_no_saved_run_artifacts(self):
+        self.assertEqual(len(self.skills), 11)
+        self.assertIn("## No saved run artifacts — all 11 skills", self.shared)
+        for name, text in self.skills.items():
+            with self.subTest(skill=name):
+                if name != "kstack":
+                    self.assertIn("Shared rules: read `../kstack/SKILL.md` first", text)
+        for phrase in ("Return all reports and final results in stdout/chat",
+                       "only in the current conversation/memory, never in files inside or outside the repo",
+                       "No stage creates logs, notes, reports, plans, manifests, state files",
+                       "never redirect/tee", "User-requested product files",
+                       "leave existing application logs, config, docs, and user data untouched"):
+            self.assertIn(phrase, self.shared)
+
+    def test_no_saved_artifact_directives_across_pack(self):
+        # Catch the superseded positive directives in ANY skill, not just Finish.
+        forbidden = (
+            r"(?i)(?:keep|load|include) (?:a |the |shared )*durable (?:resource )?manifest",
+            r"(?i)(?:save|saving|retain|retaining) (?:the )?evidence outside",
+            r"(?i)(?:outside[- ](?:the[- ])?repo(?:sitory)? (?:state|table)|state table outside the repo)",
+            r"(?i)(?:absolute recovery manifest path|durable manifest recovery path|recovery manifest path)",
+            r"(?i)(?:never (?:delete|remove) (?:the |that )?manifest|durable reports/evidence)",
+            r"(?i)(?:ask the agent to write|write a job-owned report file|evidence paths|and the artifact path)",
+            r"(?i)(?:full tables stay in the report|link only shareable evidence)",
+        )
+        for name, text in {**self.skills, "README": self.readme}.items():
+            for pattern in forbidden:
+                with self.subTest(document=name, pattern=pattern):
+                    self.assertNotRegex(text, pattern)
+
+    def test_every_settled_return_cleans_diagnostic_scratch(self):
+        for phrase in ("Before every settled return", "success, failure, blocked, pending, timeout",
+                       "`pr-green`, and Execute handoff", "stop temporary processes you started by exact PID first",
+                       "capture needed results in conversation", "delete only exact owned scratch paths",
+                       "read back absence", "not gated on merge or delivery",
+                       "Unmerged source branches/worktrees and unique code", "preserve them on failures",
+                       "cleanup partial with the exact blocker"):
+            self.assertIn(phrase, self.shared)
+        for phrase in ("preflight blockers, pending/timeout, failures, `pr-green`, and Execute handoff",
+                       "this gate protects source branches/worktrees, not diagnostic scratch",
+                       "regardless of merge or delivery", "Stop temporary processes first"):
+            self.assertIn(phrase, self.finish)
+        for phrase in ("Before every settled return, including blocked, pending, failed verification, and Execute handoff",
+                       "stop this job's temporary processes first", "Read back exact path and worktree metadata absence",
+                       "diagnostic scratch deletion never waits for those gates",
+                       "Preserve the unmerged delivery branch and worktree for Finish"):
+            self.assertIn(phrase, self.execute)
+
+    def test_no_archive_relocation_or_success_leftover_path_footer(self):
+        for phrase in ("Do not relocate artifacts to reports, cache, or archive directories",
+                       "Never print a leftover logs-path footer or move leftovers elsewhere"):
+            self.assertIn(phrase, self.shared)
+        for text in (self.finish, self.readme):
+            for phrase in ("no task-owned temporary directories/files, including .md/log/json/state",
+                           "leftover logs-path footer", "relocate leftovers to reports/cache/archive"):
+                self.assertIn(phrase, text)
+        self.assertIn("If cleanup cannot safely complete, report cleanup partial with the exact blocker", self.finish)
+        self.assertIn("not overall complete", self.finish)
+        for text in (*self.skills.values(), self.readme):
+            self.assertNotRegex(text, r"(?i)(?:logs and notes are in|reports saved to|archive (?:the )?(?:logs|reports))")
+
+    def test_stdout_collection_resume_and_direct_pr_results(self):
+        for phrase in ("Agents return final results in stdout, never report files",
+                       "retry stdout collection or request a stdout summary",
+                       "record a verification gap, never ask for a saved report",
+                       "conversation plus actual Git/PR state", "No saved logs are needed"):
+            self.assertIn(phrase, self.shared)
+        for phrase in ("Put short verification results directly in those PR bullets",
+                       "no external report links or report paths", "full tables stay in stdout/chat only",
+                       "Return final results in stdout/chat only, never a saved report"):
+            self.assertIn(phrase, self.finish)
+
+    def test_verify_returns_outcomes_and_deletes_temporary_captures(self):
+        for phrase in ("return revision-bound outcomes in chat", "Avoid captures",
+                       "transient in exact job-owned TMPDIR scratch",
+                       "Before every settled return (PASS, FAIL, BLOCKED, pending, or handoff)",
+                       "by exact PID first", "Capture needed revision-bound outcomes in conversation",
+                       "delete exact owned temporary captures/data", "read back absence",
+                       "Never retain evidence files or relocate them", "Return in stdout/chat",
+                       "observations | outcomes | diagnostic scratch cleanup"):
+            self.assertIn(phrase, self.verify)
+
+    def test_remote_absence_is_read_before_delete_and_after_failure(self):
+        for phrase in ("Before deletion, explicitly read the exact remote ref",
+                       "git ls-remote --heads <head-remote> refs/heads/<branch>",
+                       "only successful empty output proves absence",
+                       "do not send a delete for an absent ref",
+                       "After a failed delete/lease, read back the exact remote ref",
+                       "verified absent means already absent",
+                       "inspection errors never prove absence"):
+            self.assertIn(phrase, self.finish)
+
+    def test_stdlib_temporary_directory_leaves_no_owned_fixture_files(self):
+        # Minimal fixture data only: demonstrate stdlib lifetime, not a shadow cleanup engine.
+        with tempfile.TemporaryDirectory(prefix="kstack-lifetime-",
+                                         dir=os.environ.get("TMPDIR") or None) as root:
+            root_path = Path(root)
+            product = root_path / "product.md"
+            product.write_text("unrelated product documentation\n")
+            with tempfile.TemporaryDirectory(prefix="owned-", dir=root) as scratch:
+                owned = [Path(scratch) / ("fixture" + ext)
+                         for ext in (".md", ".log", ".state", ".json")]
+                for path in owned:
+                    path.write_text("transient fixture data\n")
+                    self.assertTrue(path.is_file())
+            self.assertFalse(os.path.lexists(scratch))
+            for path in owned:
+                self.assertFalse(os.path.lexists(path))
+            self.assertEqual(product.read_text(), "unrelated product documentation\n")
+            self.assertEqual(list(root_path.iterdir()), [product])
+        self.assertFalse(os.path.lexists(root))
+
+
 @unittest.skipUnless(shutil.which("git"), "Git is required for local semantic sandboxes")
 class GitCleanupSemanticsTests(unittest.TestCase):
     """Exercise Git commands only, not a second cleanup implementation or live delivery."""
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(
-            prefix="kstack-git-", dir=os.environ.get("TMPDIR"))
+            prefix="kstack-git-", dir=os.environ.get("TMPDIR") or None)
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
         self.repo = self.root / "repo"
