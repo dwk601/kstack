@@ -6,12 +6,12 @@ disable-model-invocation: true
 
 # kstack perf
 
-Shared rules: read `../kstack/SKILL.md` first. Measurement-only requests and verification lanes skip optimization and never edit source.
+Shared rules: read `../kstack/SKILL.md` first. Measurement-only and verification lanes never optimize or edit source.
 
-1. Write the claim you want to make, for example "export p50 under 200 ms on 60k rows". Pick a realistic workload.
-2. Baseline: run it several times and note median and range. Count errors and confirm the work actually ran.
-3. Find the limiter with a profiler or trace, not by reading code.
-4. Try the cheapest idea first: skip the work, avoid repeating it, do less, do it later, batch it, run it in parallel, then make it faster. Stop when the target is met.
-5. Measure again the same way: same build mode, data, and machine load. Compare like-for-like runs, alternating base and head. If base lacks the feature, report that and use an absolute head budget, not a fabricated speedup. A change inside run-to-run noise is inconclusive.
+1. State a measurable claim and realistic workload, e.g. export p50 under 200 ms on 60k rows.
+2. Baseline repeated runs: median, range, errors; confirm work actually ran.
+3. Find the limiter with profiler/trace, not code reading.
+4. Try cheapest first: skip, avoid repetition, reduce, defer, batch, parallelize, then speed up. Stop at target.
+5. Remeasure with identical build mode, data and machine load; alternate base/head. If base lacks feature, use an absolute head budget, never invented speedup. Differences within run noise are inconclusive.
 
-Report in stdout/chat: before, after, delta, run count and range, the limiter, and revision-bound profiler/trace observations, not artifact paths. Say inconclusive when it is. Avoid saved profiles; unavoidable temporary captures follow the shared exact-owned scratch cleanup rule before every settled return.
+Report before/after, delta, run count/range, limiter and revision-bound profiler/trace observations in chat, not artifact paths. Avoid saved profiles; unavoidable captures follow shared scratch cleanup.

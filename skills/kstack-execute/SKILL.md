@@ -8,50 +8,49 @@ disable-model-invocation: true
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-Use the plan in this conversation. If lost, reconstruct it from the request, code, and recorded work. No push here. There is no worker cap; dispatch every ready task, using the shared collection rules.
+Use chat plan or reconstruct from request/code. No publishing; inventory resources under Finish as created.
 
 ## 1. Frame
 
-- Resolve the requested or project-configured base, otherwise the repository's default branch. Record its SHA, create `kstack/<job>` from it, and run the baseline checks. Preserve existing job state on resume.
-- Keep one coordinator-owned in-conversation state table only: task, status, agent, branch, base/head SHA, verdict, evidence. Include the shared in-conversation resource inventory, never a file; record exact repository/job identity, path/ref, role, expected SHA or artifact type+hash, creation/ownership evidence, integration proof, and disposition. Add resources as created, including the integration branch/worktree, workers, fix/follow-up branches, detached verifiers, and owned ephemeral artifacts. Record exact job-owned branch config section snapshots (keys/values including duplicates, origins/scopes and owning file, or absence), updating them only after authorized changes for Finish's unchanged-section cleanup. Local refs do not imply remote ownership; only exact push evidence or explicit adoption qualifies a remote ref. Add lane results as they arrive. A baseline failure is not a new task failure; report it separately.
+Resolve base from request, project, then default branch. Record SHA; create `kstack/<job>`, run baseline checks. Resume without reset. Track task/agent/branch/base/head/verdict/evidence in chat; separate baseline failures.
 
 ## 2. Build
 
-- Ready means dependencies are integrated. Each task gets its own worktree and branch from `kstack/<job>`, with `python3 "$MODELS" cmd workers --index <task-number>`.
-- Briefs stand alone: goal, owned files, acceptance criteria, check command, base SHA, dependency results, report format. No bare "continue" or competing implementations of one task.
-- Workers implement, check, and commit. Use `../kstack-debug/SKILL.md` for bugs, `../kstack-perf/SKILL.md` for speed, and `../kstack-verify/SKILL.md` for behavior. Report `task | SHA | files | check + result | assumptions`.
-- A missing or incomplete report gets one fresh attempt, only after the old writer has stopped. A second miss is a gap; skip its dependents and preserve the work.
+Dispatch all ready tasks after dependencies integrate; no worker cap. Each owns a branch/worktree from integration and uses `python3 "$MODELS" cmd workers --index <task-number>`.
+
+Brief goal, files, acceptance, check, base SHA, dependencies and report format. No competing implementations or bare "continue". Workers implement/check/commit using Debug, Perf or Verify as appropriate. Return `task | SHA | files | check + result | assumptions`.
+
+Missing reports get one fresh attempt after the old writer stops; another miss is a gap. Skip dependents and preserve work.
 
 ## 3. Review each task
 
-- The `reviewer` uses `../kstack-review/SKILL.md` on the frozen base/head pair. For a one-task job, include scope and regression audit so this review can also fill one final audit lane.
-- FAIL returns to the worker. After `max_fails`, block the task and skip dependents. BLOCKED is not a strike; retry only after the environment is repaired, otherwise report partial.
-- Reviewers never fix code.
+Independent `reviewer` uses `../kstack-review/SKILL.md` at frozen base/head. Include scope/regression audit for one-task final-lane reuse. FAIL returns to worker; block after `execution.max_fails` and skip dependents. BLOCKED is not a strike; retry after environment repair, otherwise partial. Reviewers never fix.
 
 ## 4. Integrate
 
-- After review, pause the worker and integrate serially: rebase, rerun the task check, then fast-forward. Conflicts go back to the worker; review any resolution before integration. Record the reviewed final worker tip after any rebase, its review/check evidence, and the resulting integration SHA in the in-conversation inventory. Unlock dependents only after integration.
-- Finish dispatch and collection: every task must be integrated, blocked, or skipped, and every started agent accounted for. Only then freeze the integration head as the code-ready SHA. Prove each integrated worker tip is an ancestor of the frozen code-ready/delivery head (`git merge-base --is-ancestor <worker-tip> <frozen-head>`); record that chain, not equality with the PR head. Unintegrated or advanced refs are retained. If Finish rewrites the delivery head, it must renew this integration proof or retain the affected refs. Finish ties the verified PR head to the actual merge SHA with API proof, including squash/rebase mappings. Unfinished work makes the result partial.
+Pause worker; serially rebase, rerun task checks and fast-forward. Worker resolves conflicts; reviewer checks. Record reviewed final worker tip after rebase, review/check evidence and integration SHA; unlock dependents.
+
+Account for every started agent and task as integrated, blocked or skipped before freezing head. Prove `git merge-base --is-ancestor <worker-tip> <frozen-head>`, not PR-head equality. Retain advanced/unintegrated refs. Renew proof after rewrites or retain. Finish maps verified PR to merge, including squash/rebase. Unfinished tasks mean partial.
 
 ## 5. Verification swarm
 
-This section also verifies an existing branch for Finish without rebuilding it. Supply the request, base/head SHAs, acceptance criteria, scenarios with pass conditions, check commands, and any prior stdout/chat outcomes. Infer missing scenarios from the diff and repo; never invent a previous PASS.
+Finish also uses this without rebuilding. Supply request, exact base/head, acceptance, scenarios/pass conditions, commands and prior outcomes. Infer missing scenarios from diff/repo; never invent PASS.
 
-Run independent lanes at the frozen head in detached worktrees (`git worktree add --detach <path> <sha>`). Give each the relevant evidence and a distinct focus. Verifiers never edit source. Select models with `python3 "$MODELS" cmd verifiers --index <lane>`.
+Independent lanes use `git worktree add --detach <path> <sha>` at frozen head and `python3 "$MODELS" cmd verifiers --index <lane>`:
 
-| Lane | Required evidence |
+| Lane | Evidence |
 |---|---|
-| Audit | Two independent focused reviews using `../kstack-review/SKILL.md`, each in its own context. They may share one model. |
-| Gates | Run the full checks, lint, and typecheck once at this head; the coordinator can do this. |
-| Live | `../kstack-verify/SKILL.md` for each changed user-visible behavior, with one main scenario compared against base. |
-| Perf | Only for a speed target: measure using `../kstack-perf/SKILL.md`, without changing code. |
+| Audit | Two focused Review contexts; models may match |
+| Gates | Full checks/lint/typecheck once at head; coordinator may run |
+| Live | Verify every changed user-visible behavior; compare one main scenario to base |
+| Perf | Measure speed targets without editing |
 
-For a one-task job, reuse its task review as one audit only when the base/head pair and audit scope match. Choose the other verifier from the pool; a one-model pool is fine. Reuse gates only for the same SHA, commands, and environment; audits check their focused claims rather than rerunning unrelated suites.
+Reuse one-task review as one audit only at matching base/head and scope. Gates require identical SHA, commands and environment; audits need not repeat unrelated suites.
 
-- Every required lane returns `base SHA | head SHA | PASS/FAIL/BLOCKED | commands | evidence`. Missing evidence gets one retry, then a gap. An inapplicable check needs a reason; an unavailable required check stays BLOCKED. A gap never counts as PASS.
-- Existing defects remain recorded against base unless the change copies, worsens, or newly exposes them. During Execute, new defects become repair tasks through steps 2-4 with one swarm repair round, then stop partial if anything remains. When verifying for Finish, return findings to its fixer loop instead; only its `finish.max_fix_rounds` budget applies.
-- After small repairs or a rebase, one independent verifier at the new head checks the diff, reruns gates and affected or previously failed scenarios, and records which earlier results remain valid and why. New behavior or a large diff requires the full swarm again, within the same repair budget.
+Return `base SHA | head SHA | PASS/FAIL/BLOCKED | commands | evidence`. Missing evidence gets one retry then gap. N/A needs reason; required unavailable checks stay BLOCKED. Existing defects belong to base unless copied, worsened or newly exposed.
+
+Execute repairs through steps 2–4 with one swarm repair round, then stops partial. Finish uses its own `finish.max_fix_rounds`. Small repairs/rebases need one independent verifier to inspect diff, rerun gates and affected/failed scenarios, and justify reuse. New behavior/large diffs require full swarm within budget.
 
 ## 6. Report
 
-Return the final report in stdout/chat only. Report complete only when acceptance criteria and all required lanes pass and diagnostic scratch cleanup is complete. Otherwise report partial. Keep task-to-SHA/check/verdict and lane-to-outcome tables in conversation, with open findings and checks not run. Preserve the unmerged delivery branch and worktree for Finish. Execute may stop this job's idle agents. Before every settled return, including blocked, pending, failed verification, and Execute handoff, stop this job's temporary processes first and capture needed results in conversation. Remove exact owned diagnostic scratch and only its clean, idle, disposable verifier worktrees using Finish's per-worktree operation-state, ignored-content, lock, artifact, no-force, and readback rules, updating the in-conversation inventory. Read back exact path and worktree metadata absence; unsafe removal means cleanup partial with the exact blocker. Delivery branch/worktree cleanup belongs to Finish only after confirmed merge and all requested delivery gates pass; diagnostic scratch deletion never waits for those gates. Report delivery-resource cleanup separately from diagnostic scratch cleanup. No saved report, inventory/state file, recovery-file path, or archive/relocation.
+Chat task/SHA/check/verdict, lanes, findings and checks not run. Complete needs acceptance, required lanes and shared scratch cleanup under Finish safety/readback. Clean idle disposable verifiers; may stop own idle agents. Preserve unmerged delivery branch/worktree. Separate delivery-resource/diagnostic cleanup status.
