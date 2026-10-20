@@ -38,7 +38,7 @@ Other agents can be asked to use a skill by name. Entrypoints are explicit-only 
 | kstack-perf | Measure bottlenecks and fixes |
 | kstack-improve | Prevent repeated mistakes |
 
-Tasks stop before publishing. Diagnosis/explanation are read-only; code changes use Plan and Execute. There is no test-first mandate or racing implementations.
+Tasks stop before publishing. Diagnosis/explanation are read-only; code changes use Plan and Execute.
 
 ## Configuration and delivery
 
@@ -55,6 +55,9 @@ Results and ownership stay in conversation/stdout, never saved reports, plans, l
 
 ## Tests
 
+Keep skills minimal: define shared rules once, replace obsolete wording, and stay within the byte budgets in `tests/test_pack.py`.
+
+
 ```sh
 python3 -B -m unittest discover -s tests -v
 ```
@@ -63,4 +66,4 @@ Offline contracts and isolated Git sandboxes are not live proof of GitHub mergin
 
 ## Credits
 
-Adapted from [pstack](https://github.com/cursor/plugins/tree/850d7f2e9f5e55dff7eb00a0a479337fe79eb22f/pstack) by Lauren Tan (MIT). See `LICENSE`.
+Adapted from [pstack](https://github.com/cursor/plugins/tree/a66a8931c2dd71f1ed6abf6a52b1898a9f389ae4/pstack) by Lauren Tan (MIT). See `LICENSE`.

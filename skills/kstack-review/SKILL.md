@@ -18,12 +18,12 @@ Never review your implementation; dispatch a fresh configured reviewer. Never ed
 
 ## Method
 
-1. Record base/head SHAs. Code reviews run task checks/lint; audits inspect gates evidence and run focused probes without repeating unrelated suites. Required unavailable checks are BLOCKED.
-2. Compare diff to acceptance. Follow callers, stored data, contracts, config and shared state beyond changed files. Find applicable repo standards; cite rules supporting findings.
-3. Check correctness, edges, root cause, complexity, behavioral evidence and safety assumptions.
+1. Record base/head SHAs. Code reviews run task checks/lint; audits inspect gates evidence and run focused probes without repeating unrelated suites.
+2. Compare diff to acceptance. Follow callers, stored data, wire formats, flags, library source, config and shared state beyond changed files. Name the fact safety depends on and prove it by running code. Find applicable repo standards; cite rules supporting findings.
+3. Check correctness, edges, root cause, complexity and behavioral evidence.
 
 ## Verdict
 
 Return `task or lane | base/head SHAs | PASS/FAIL/BLOCKED | checks | evidence`; plan reviews identify the chat plan instead of SHAs.
 
-FAIL lists all proven findings together: severity, file:line, broken criterion, evidence, fix. BLOCKED names missing check/error. Style does not block. Missing tests fail only where the repo tests that area and behavior remains unproven.
+FAIL lists all proven findings together: severity, file:line, broken criterion, evidence, fix. BLOCKED names missing check/error. Style does not block. Tests that pass when behavior breaks, or fail on internal-only changes, are findings. Missing tests fail only where the repo tests that area and behavior remains unproven.

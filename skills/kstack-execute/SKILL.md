@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-Use chat plan or reconstruct from request/code. No publishing; inventory resources under Finish as created.
+Use chat plan or reconstruct from request/code; inventory resources under Finish as created.
 
 ## 1. Frame
 
@@ -18,7 +18,7 @@ Resolve base from request, project, then default branch. Record SHA; create `kst
 
 Dispatch all ready tasks after dependencies integrate; no worker cap. Each owns a branch/worktree from integration and uses `python3 "$MODELS" cmd workers`.
 
-Brief goal, files, acceptance, check, base SHA, dependencies and report format. No competing implementations or bare "continue". Workers implement/check/commit using Debug, Perf or Verify as appropriate. Return `task | SHA | files | check + result | assumptions`.
+Brief goal, files, acceptance, check, base SHA, dependencies and report format. No bare "continue". Workers implement/check/commit using Debug, Perf or Verify as appropriate. Return `task | SHA | files | check + result | assumptions`.
 
 Missing reports get one fresh attempt after the old writer stops; another miss is a gap. Skip dependents and preserve work.
 
@@ -30,7 +30,7 @@ Independent `reviewer` uses `../kstack-review/SKILL.md` at frozen base/head. Inc
 
 Pause worker; serially rebase, rerun task checks and fast-forward. Worker resolves conflicts; reviewer checks. Record reviewed final worker tip after rebase, review/check evidence and integration SHA; unlock dependents.
 
-Account for every started agent and task as integrated, blocked or skipped before freezing head. Prove `git merge-base --is-ancestor <worker-tip> <frozen-head>`, not PR-head equality. Retain advanced/unintegrated refs. Renew proof after rewrites or retain. Finish maps verified PR to merge, including squash/rebase. Unfinished tasks mean partial.
+Account for every started agent and task as integrated, blocked or skipped before freezing head. Prove `git merge-base --is-ancestor <worker-tip> <frozen-head>`, not PR-head equality. Retain advanced/unintegrated refs. Renew proof after rewrites or retain. Unfinished tasks mean partial.
 
 ## 5. Verification swarm
 
@@ -47,7 +47,7 @@ Independent lanes use `git worktree add --detach <path> <sha>` at frozen head an
 
 Reuse one-task review as one audit only at matching base/head and scope. Gates require identical SHA, commands and environment; audits need not repeat unrelated suites.
 
-Return `base SHA | head SHA | PASS/FAIL/BLOCKED | commands | evidence`. Missing evidence gets one retry then gap. N/A needs reason; required unavailable checks stay BLOCKED. Existing defects belong to base unless copied, worsened or newly exposed.
+Return `base SHA | head SHA | PASS/FAIL/BLOCKED | commands | evidence`. Missing evidence gets one retry then gap. N/A needs reason. Existing defects belong to base unless copied, worsened or newly exposed.
 
 Execute repairs through steps 2–4 with one swarm repair round, then stops partial. Finish uses its own `finish.max_fix_rounds`. Small repairs/rebases need one independent verifier to inspect diff, rerun gates and affected/failed scenarios, and justify reuse. New behavior/large diffs require full swarm within budget.
 
