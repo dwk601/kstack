@@ -1,50 +1,48 @@
 ---
 name: kstack
-description: Plan, build, verify, and finish delivery of coding tasks.
+description: Route coding tasks through planning, implementation, verification and delivery.
 disable-model-invocation: true
 ---
 
 # kstack
 
-All skills inherit these rules. This entrypoint routes requests:
+All skills inherit these rules. Resolve sibling skills at `../<skill-name>/SKILL.md`:
 
-| Request | Skills |
+| Request | Skill |
 |---|---|
-| Change code | Plan then Execute; stop before publishing |
-| Ship | Finish |
-| Explain | Understand |
-| Diagnose / measure | Debug / Perf, read-only |
-| Review / prove | Review / Verify |
-| Prevent repeats / configure | Improve / Setup |
+| Change | kstack-plan → kstack-execute; stop before publishing |
+| Ship | kstack-finish |
+| Explain | kstack-understand |
+| Diagnose / measure | kstack-debug / kstack-perf, read-only |
+| Review / prove | kstack-review / kstack-verify |
+| Prevent repeats / configure | kstack-improve / kstack-setup |
 
 ## Shared rules
 
-- Standalone code-changing Debug/Perf/Improve uses Plan then Execute. Assigned workers follow their method without nested workflows or agents.
-- One writer per branch/worktree. Independent reviewers/verifiers never edit source.
-- Never weaken checks. Unavailable required checks are BLOCKED; unmet acceptance means partial.
-- Only Finish publishes, merges, deploys or cleans delivery resources. Read only the rules in `../kstack-finish/SKILL.md` for permissions, inventory and cleanup; do not start its workflow. Execute may clean disposable verifiers; preserve unmerged source.
-- Label claims measured, inferred or guess; never hand users checks you can run.
+- Complete requested scope without reasking; stop after acceptance/checks or a named blocker/budget. Report unrelated improvements instead of implementing them.
+- Prefer targeted edits and repo-sized tests. Run real checks; syntax/failed startup is insufficient. Never weaken checks: unavailable required checks are BLOCKED; unmet acceptance is partial.
+- Code changes use kstack-plan → kstack-execute. Assigned workers skip nested workflows/agents. One writer per branch/worktree; reviewers/verifiers leave source unchanged.
+- Only kstack-finish publishes/merges/deploys. Read `../kstack-finish/SKILL.md` for inventory; use its cleanup reference for resource deletion, without starting delivery.
+- Batch independent calls. Update at start/milestones; finish with results/evidence/blockers. Distinguish measured facts/inference/guesses.
 
 ## No saved run artifacts
 
-Keep ownership inventory in conversation/memory or stdout, never files inside or outside repo. No logs, notes, reports, plans, manifests, state files, redirect/tee, saved-report fallback, archive/cache relocation or leftover logs-path footer. Preserve application logs/config/docs, product files and user data; requested product/config/docs changes are allowed.
+Keep inventory/results in conversation/stdout, never files inside or outside repo. No saved logs/notes/reports/plans/state, redirect/tee, archive relocation or leftover logs-path footer. Preserve product files, application logs/config/docs and user data; requested changes remain allowed.
 
-Limit output. Remove only exact tool-generated overflow logs using Finish's artifact checks; never sweep caches. Avoid captures. Unavoidable tests/screenshots use inventoried, owned TMPDIR scratch; unset/empty uses the platform fallback.
+Limit output. Delete exact owned overflow logs only under cleanup safeguards, never sweep caches. Avoid captures; unavoidable data uses inventoried owned TMPDIR scratch (unset/empty: platform fallback).
 
-Before every settled return (success, failure, blocked, pending, timeout, pr-green, handoff), stop temporary processes by exact PID first. Capture results in conversation, delete exact owned scratch/disposable verifier worktrees under Finish's safety checks, then read back absence. Cleanup never waits for merge/delivery. Retain unmerged source branches/worktrees and unique code. Unsafe deletion means cleanup partial with exact blocker.
+Before every settled return: stop exact owned temporary PIDs, capture results, delete safe owned scratch/disposable verifiers, read back absence. This never waits for merge/delivery. Retain unmerged source/unique code; unsafe cleanup is partial with exact blocker. Resume from conversation plus actual Git/PR state, not saved logs.
 
-Resume from conversation plus actual Git/PR state, never saved logs.
+## Dispatch
 
-## Dispatch and collect
-
-For dispatch, set MODELS to absolute `../kstack-setup/scripts/kstack-models`; run `python3 "$MODELS" validate`. Use Setup if missing. Run printed commands in the assigned checkout.
+Set MODELS to absolute `../kstack-setup/scripts/kstack-models`; run `python3 "$MODELS" validate`, using kstack-setup if missing. Run printed commands in assigned checkouts.
 
 Inside Herdr (`HERDR_ENV=1`):
-1. `herdr pane split --current --direction right --cwd <path> --no-focus` (or down); use returned pane ID.
-2. Run the command from `python3 "$MODELS" cmd <role> --herdr <name> --pane <id>`.
-3. Dispatch ready agents with `herdr agent prompt <name> "<brief>"`, without --wait.
-4. Collect via `herdr agent list` and `herdr agent read <name> --source recent-unwrapped --lines 120`. If none ready, `herdr agent wait <name> --timeout 120000`, then read.
+1. Split: `herdr pane split --current --direction right --cwd <path> --no-focus`.
+2. Launch: `python3 "$MODELS" cmd <role> --herdr <name> --pane <returned-id>`.
+3. Dispatch: `herdr agent prompt <name> "<brief>"`, without --wait; continue independent work.
+4. Collect: `herdr agent list`, then `herdr agent read <name> --source recent-unwrapped --lines 120`. If none ready, `herdr agent wait <name> --timeout 120000`, then read.
 
-Submission/idle is not completion; require assignment stdout. Inspect blocked/unknown/timeouts; never blindly resend or answer approvals. Retry collection/request stdout summary; still missing means verification gap, never report files.
+Idle/submission isn't completion: require assignment stdout. Inspect blockers/timeouts; retry collection, not blind resends/approvals. Missing results are verification gaps, never report files.
 
-Outside Herdr, never inspect/control its session. Run foreground agents sequentially via `python3 "$MODELS" cmd <role> --oneshot`, brief last. No hidden background agents.
+Outside Herdr, leave its sessions alone. Run foreground agents sequentially via `python3 "$MODELS" cmd <role> --oneshot`, brief last; no hidden background agents.
