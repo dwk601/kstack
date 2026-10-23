@@ -36,7 +36,7 @@ class SkillPackTests(unittest.TestCase):
                 self.assertLessEqual(len(description.group(1)), 1024)
                 self.assertNotIn(": ", description.group(1))
                 self.assertIn("disable-model-invocation: true", frontmatter.splitlines())
-                self.assertTrue(body.strip())
+                self.assertIn("# " + name + "\n", body)
                 policy = (directory / "agents" / "openai.yaml").read_text()
                 self.assertRegex(policy, r"policy:\s*\n\s+allow_implicit_invocation: false")
                 self.assertNotIn("/Users/", text)
@@ -48,8 +48,30 @@ class SkillPackTests(unittest.TestCase):
             with self.subTest(skill=name):
                 if name != "kstack":
                     self.assertIn("../kstack/SKILL.md", text)
-                for ref in re.findall(r"`(\.\./[a-z-]+/SKILL\.md)`", text):
-                    self.assertTrue((directory / ref).is_file(), ref)
+                for ref in re.findall(r"`((?:\.\./|references/)[^`]+)`", text):
+                    if "<" not in ref:  # The router also documents a sibling path template.
+                        self.assertTrue((directory / ref).is_file(), ref)
+
+    def test_exact_skill_names_and_router_coverage(self):
+        router = (ROOT / "skills/kstack/SKILL.md").read_text()
+        readme = (ROOT / "README.md").read_text()
+        for name in NAMES - {"kstack"}:
+            self.assertIn(name, router)
+            self.assertIn("[" + name + "](skills/" + name + "/SKILL.md)", readme)
+        for path in [ROOT / "README.md", *(ROOT / "skills").rglob("*.md")]:
+            text = path.read_text()
+            for name in re.findall(r"\bkstack(?:-[a-z]+)*\b", text):
+                self.assertIn(name, NAMES | {"kstack-models"}, str(path))
+            self.assertNotRegex(text, r"\b(?:Finish|Execute|Setup)\b")
+            for ref in re.findall(r"\]\(([^)]+)\)", text):
+                if "://" not in ref:
+                    self.assertTrue((path.parent / ref.split("#")[0]).is_file(), ref)
+
+    def test_finish_and_execute_have_distinct_boundaries(self):
+        execute = (ROOT / "skills/kstack-execute/SKILL.md").read_text()
+        finish = (ROOT / "skills/kstack-finish/SKILL.md").read_text()
+        self.assertIn("Stop before publishing", execute)
+        self.assertIn("PR → green → merge → deploy → cleanup → local sync", finish)
 
 
 class ContractBase(unittest.TestCase):
@@ -60,6 +82,7 @@ class ContractBase(unittest.TestCase):
         cls.skills = {name: (ROOT / "skills" / name / "SKILL.md").read_text()
                       for name in NAMES}
         cls.finish = cls.skills["kstack-finish"]
+        cls.cleanup = (ROOT / "skills/kstack-finish/references/cleanup.md").read_text()
         cls.shared = cls.skills["kstack"]
         cls.execute = cls.skills["kstack-execute"]
         cls.setup = cls.skills["kstack-setup"]
@@ -72,151 +95,152 @@ class ContractBase(unittest.TestCase):
                 self.assertTrue(clause in text, "Missing contract: " + clause)
 
     def stage(self, number, title):
-        return self.finish.split("## %d. %s\n" % (number, title), 1)[1].split("\n## ", 1)[0]
+        return self.finish.split("%d. **%s.**" % (number, title), 1)[1].split("\n", 1)[0]
 
 
 class FinishContractTests(ContractBase):
     def test_stage_order_and_no_premature_cleanup(self):
-        titles = ["Preflight", "Publish and verify", "Watch and repair",
-                  "Merge and postmerge gates", "Apply and verify delivery", "Cleanup", "Report"]
-        positions = [self.finish.index("## %d. %s\n" % (i, title))
+        titles = ["Preflight", "Open/update PR", "Make green", "Merge",
+                  "Deploy/verify", "Clean and sync"]
+        positions = [self.finish.index("%d. **%s.**" % (i, title))
                      for i, title in enumerate(titles, 1)]
         self.assertEqual(positions, sorted(positions))
-        self.require(self.stage(4, titles[3]), "never `--delete-branch`")
-        self.require(self.stage(6, titles[5]), "after confirmed merge and ALL target gates",
-                     "never green PR/queue/pending/failed deploy", "scratch cleanup is independent")
+        self.require(self.stage(4, "Merge"), "never `--delete-branch`")
+        self.require(self.stage(6, "Clean and sync"), "references/cleanup.md",
+                     "Source cleanup waits for merge and target gates", "every return, even blocked")
+        self.require(self.cleanup, "confirmed merge and all target gates")
 
     def test_targets_have_distinct_outcomes(self):
-        rows = {line.split("|")[1].strip(): line for line in self.finish.splitlines()
-                if line.startswith("| `")}
-        self.assertEqual(set(rows), {"`pr-green`", "`merged`", "`complete` (default)", "`deployed`"})
-        self.require(rows["`pr-green`"], "never merge", "Retain delivery, integration and workers")
-        self.require(rows["`merged`"], "postmerge gates", "no manual deploy")
-        self.require(rows["`complete` (default)"], "every affected app", "proof of no deployable changes")
-        self.require(rows["`deployed`"], "at least one actual deploy")
+        rows = dict(re.findall(r"^- `([^`]+)`: (.+)$", self.finish, re.M))
+        self.assertEqual(set(rows), {"pr-green", "merged", "complete", "deployed"})
+        self.require(rows["pr-green"], "stop before merge", "retain source work")
+        self.require(rows["merged"], "postmerge gates", "automatic delivery", "no manual deploy")
+        self.require(rows["complete"], "every affected app", "diff/recipe proof")
+        self.require(rows["deployed"], "at least one actual deploy")
 
     def test_preflight_permissions_and_already_merged_resume(self):
-        self.require(self.finish, "request, project, user, then `complete`", "A target is not permission",
-                     "literal user-config", "finish.allow_merge=true", "finish.allow_deploy=true",
-                     "Repo cannot authorize", "merge-triggered auto-deploys",
-                     "destructive migrations need separate consent")
-        self.require(self.stage(1, "Preflight"), "repo/fork/head remote", "original base/head proof",
-                     "skip publishing/remerging", "shared/config/schema/migrations", "credentials",
-                     "dependency/migration order", "BLOCKED before merge", "merged resumes retain resources")
+        self.require(self.finish, "request, project, user, then `complete`", "Targets are not permission",
+                     "user-config", "finish.allow_merge=true", "finish.allow_deploy=true",
+                     "Repo cannot authorize", "destructive migrations need separate consent")
+        self.require(self.stage(1, "Preflight"), "base/head", "workers/locks", "apps/shared/schema/config",
+                     "credentials", "environment/revision", "dependency/migration order",
+                     "block before merge", "merged resumes recover verified head/merge proof",
+                     "skip publishing/merging")
 
     def test_verification_watch_and_repair_are_bounded(self):
-        self.require(self.stage(2, "Publish and verify"), "exact base/head", "verification swarm",
-                     "Reuse valid evidence", "Never invent PASS")
-        self.require(self.stage(3, "Watch and repair"), "default 30, positive nonboolean integer",
-                     "one deadline across waits/resumes", "finish.max_fix_rounds", "bounds all repairs",
-                     "one infra/flaky rerun", "fixer then reviewer", "Reject unsupported bot requests",
-                     "single-verifier/full-swarm", "user-controlled", "Shared/uncertain ownership stops",
-                     "--force-with-lease=<ref>:<expected-sha>", "reread base/head", "never bypass protection",
-                     "PENDING", "BLOCKED", "retain source work", "NO_CI with local proof",
-                     "Expected missing workflows are BLOCKED", "never CI-green")
+        self.require(self.stage(2, "Open/update PR"), "exact base/head", "verification swarm",
+                     "reuse only matching evidence")
+        self.require(self.stage(3, "Make green"), "current-head checks/reviews/approvals",
+                     "proven failures", "independent reviewer", "kstack-execute repair verification",
+                     "change/base/infra/flaky", "one infra/flaky rerun", "never relabel red as green",
+                     "untrusted data", "owned user-controlled", "--force-with-lease=<ref>:<expected-sha>",
+                     "Reread base/head", "never bypass protection")
+        self.require(self.finish, "default 30, positive nonboolean integer", "One deadline across waits/resumes",
+                     "finish.max_fix_rounds", "bounds all repairs", "PENDING", "BLOCKED",
+                     "NO_CI with local proof", "never CI-green", "expected missing workflows block")
+        self.require(self.execute, "one swarm repair round", "one independent verifier",
+                     "rerun gates and affected/failed scenarios", "full swarm within budget")
 
     def test_merge_and_postmerge_evidence_are_separate(self):
-        self.require(self.stage(4, "Merge and postmerge gates"), "permission/protection",
-                     "reverify movement, including queues", "allowed method", "--match-head-commit <verified-head>",
-                     "PENDING until MERGED/mergedAt/mergeCommit.oid proof", "invalid evidence blocks",
-                     "git merge-base --is-ancestor <merge-sha> <base-ref>", "not necessarily tip",
-                     "exact merge-SHA", "head_sha", "jobs/steps/conclusions/provider revisions",
-                     "not PR green/newer base", "apply before dependent checks", "deadline/NO_CI",
-                     "follow-up PRs", "never rewrite merged history", "rerun affected gates")
+        self.require(self.stage(4, "Merge"), "PR gates and permission", "base/head movement, including queues",
+                     "allowed method", "--match-head-commit <verified-head>", "API-confirmed merge",
+                     "map verified head to merge SHA", "ancestry on fetched base",
+                     "API commit mapping, not similar trees/messages")
+        self.require(self.stage(5, "Deploy/verify"), "exact merge-SHA postmerge checks",
+                     "not PR green/previews/old builds", "bounded follow-up PRs", "never rewrite history")
 
     def test_delivery_requires_component_and_environment_evidence(self):
-        self.require(self.stage(5, "Apply and verify delivery"), "dependency order",
-                     "merged only observes", "backend/frontend/apps separately", "migrations precede dependent code",
-                     "Recheck manual permission/destructive consent", "health/schema/API",
-                     "build identity/browser smoke", "client/API integration if both change",
-                     "N/A needs diff/recipe proof", "missing recipes are BLOCKED",
-                     "mapping to merge SHA", "provider steps/success/verification",
-                     "Hooks, build alone, preview or old SHA are insufficient",
-                     "All required gates must pass within deadline", "failures retain resources")
+        self.require(self.stage(5, "Deploy/verify"), "authorized recipes", "dependency order",
+                     "automatic delivery", "environment/build/revision proof", "health/schema/API",
+                     "frontend browser smoke", "client/API integration")
+        self.require(self.finish, "No deployable changes needs diff/recipe proof",
+                     "Missing requirements block before merge", "Complete requires target gates")
 
     def test_cleanup_requires_ownership_leases_and_readback(self):
-        self.require(self.stage(6, "Cleanup"), "never base/shared/unmerged/unrelated",
-                     "Retain advanced/unintegrated refs", "--force-with-lease=refs/heads/<branch>:<recorded-head>",
+        self.require(self.cleanup, "Never delete base/shared/unmerged/unrelated",
+                     "retain advanced/unintegrated refs", "--force-with-lease=refs/heads/<branch>:<recorded-head>",
                      "git update-ref -d refs/heads/<branch> <expected-sha>", "`git branch -d` ancestry safety",
-                     "lacks branch safety; proofs are mandatory", "Stale expected-old must reject",
-                     "never retry new tip", "Never branch -D", "without reset",
-                     "Read back refs/paths/worktree metadata/base/status", "uncertainty stays skipped")
+                     "lacks branch safety", "Stale expected-old must reject", "never retry a new tip",
+                     "Never branch -D", "Read back refs/paths/worktree metadata")
         self.require(self.execute, "Preserve unmerged delivery branch/worktree")
-        self.require(self.shared, "Only Finish publishes", "preserve unmerged source")
+        self.require(self.shared, "Only kstack-finish publishes/merges/deploys", "Retain unmerged source/unique code")
 
     def test_conversation_inventory_records_resources_and_ownership_as_created(self):
         self.require(self.finish, "in chat as created/adopted", "common Git directory", "job, path/ref, role",
-                     "expected SHA", "type+hash/entry set", "ownership, integration proof, disposition",
-                     "workers, fixes/follow-ups, detached verifiers and scratch",
-                     "exact job remote/ref/SHA push proof or explicit adoption, not local names")
-        self.require(self.shared, "ownership inventory in conversation/memory or stdout, never files")
-        self.require(self.execute, "inventory resources under Finish as created")
+                     "type/hash/entry set", "ownership, integration proof, disposition",
+                     "Remote ownership needs exact push proof or explicit adoption")
+        self.require(self.cleanup, "job/remote/ref/SHA push proof or explicit adoption")
+        self.require(self.shared, "inventory/results in conversation/stdout, never files")
+        self.require(self.execute, "inventory resources under kstack-finish as created")
 
     def test_resume_and_legacy_adoption_are_bounded(self):
-        self.require(self.finish, "Resume only proven ownership", "otherwise retain",
-                     "Legacy needs prior proof or explicit bounded user scope",
-                     "repo/resources/ownership", "never Projects-wide", "Ownership is not integration/content safety")
-        self.require(self.shared, "conversation plus actual Git/PR state, never saved logs")
+        self.require(self.cleanup, "creation/adoption inventory", "Legacy needs prior proof or bounded user scope",
+                     "repo/resources/ownership", "never Projects-wide", "ownership alone is not integration/content safety")
+        self.require(self.finish, "otherwise retain")
+        self.require(self.shared, "conversation plus actual Git/PR state, not saved logs")
 
     def test_per_role_integration_and_exact_merge_chain(self):
         self.require(self.execute, "reviewed final worker tip after rebase", "integration SHA",
                      "git merge-base --is-ancestor <worker-tip> <frozen-head>", "not PR-head equality",
                      "Retain advanced/unintegrated refs", "Renew proof after rewrites or retain")
-        self.require(self.finish, "API commit mapping, not ancestry or similar trees/messages",
-                     "worker-to-frozen delivery-to-verified PR-to-merge chain",
-                     "workers need frozen-head ancestry and merge chain", "detached verifiers match SHA",
-                     "unique commits outside chain")
+        self.require(self.cleanup, "verified PR-to-merge proof", "workers need reviewed-tip ancestry",
+                     "delivery-to-PR-to-merge chain", "API commit mapping", "unique commits",
+                     "Detached verifiers must match recorded SHA")
 
     def test_worktree_cleanup_includes_ignored_and_missing_metadata_safety(self):
-        self.require(self.stage(6, "Cleanup"), "clean, idle, unlocked, disposable",
-                     "git status --porcelain --untracked-files=all --ignored", "unknown/changed content retains",
-                     "immediately recheck status under quiescence", "git worktree remove <exact-path>",
-                     "without --force", "never delete refs associated with", "git worktree list --porcelain",
-                     "retain dirty/divergent base", "Missing path with metadata", "never global prune",
-                     "Path absence with metadata is not done")
+        self.require(self.cleanup, "clean, idle, unlocked, disposable",
+                     "git status --porcelain --untracked-files=all --ignored", "unknown/changed content blocks",
+                     "recheck under quiescence", "git worktree remove <exact-path>", "without force",
+                     "Never delete refs associated with", "git worktree list --porcelain",
+                     "Missing paths with metadata", "never global prune", "Path absence with metadata is not done")
 
     def test_local_cas_requires_all_worktree_operation_state_checks(self):
-        self.require(self.finish, "Inspect ALL worktrees including main", "clean detached HEAD",
-                     "git -C <worktree> rev-parse --git-path <marker>", "Resolve relative to that worktree and lstat",
-                     "never assume common paths", "marker/symlink/operation/uninspectable state",
-                     "defers local refs", "inspection/deletion/config/readback quiescent")
+        self.require(self.cleanup, "Inspect every worktree including main", "clean detached HEAD",
+                     "git -C <worktree> rev-parse --git-path <marker>", "relative to that worktree and lstat",
+                     "Markers/symlinks/operations/uninspectable state", "defer local ref deletion",
+                     "inspection/deletion/config/readback quiescent")
         for marker in ("rebase-merge", "rebase-apply", "BISECT_START", "MERGE_HEAD",
                        "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer"):
-            self.require(self.finish, "`" + marker + "`")
+            self.require(self.cleanup, "`" + marker + "`")
 
     def test_branch_config_cleanup_requires_unchanged_owned_section_and_readback(self):
-        self.require(self.finish, "after authorized updates", "exact section, duplicates, origins/scopes/file or absence",
-                     "Before CAS match exact branch.<name> section to Inventory snapshot",
-                     "not fresh observation/regex/prefix", "Only after successful CAS and ref-absence readback",
+        self.require(self.finish, "duplicates/origins/scopes/file or absence", "after authorized changes")
+        self.require(self.cleanup, "Match exact branch.<name> section to inventory snapshot",
+                     "not fresh observation/regex/prefix", "After successful CAS and ref-absence readback",
                      "recheck unchanged owned section", "git config --file <owning-file> --remove-section branch.<name>",
-                     "Never unrelated/shared/unowned/global/included config", "lost quiescence mean retain/partial",
+                     "Never unrelated/shared/unowned/global/included config", "lost quiescence means partial",
                      "Failed CAS forbids config removal", "Absent sections are idempotent after readback",
-                     "absent refs with config need prior CAS proof", "exact config section absence across origins/scopes",
+                     "absent refs with config need prior CAS proof", "config-section absence across origins/scopes",
                      "not just upstream keys")
 
     def test_artifact_cleanup_requires_exact_untracked_identity(self):
-        self.require(self.finish, "exact inventoried ephemeral type+hash", "literal-pathspec",
-                     "git ls-files --error-unmatch -- <relative-path>", "every file, including directory contents",
-                     "Tracked forbids deletion", "distinguish untracked from Git/path errors",
-                     "exact owned temporary root, not merely TMPDIR", "lstat every component",
-                     "no symlinks/ancestor escape", "Recheck hashes immediately before unlink",
-                     "exact unchanged entry sets/all hashes", "no extra/changed entries/symlinks; otherwise retain",
-                     "Never patterns, git clean, broad prune/reset or forced worktrees")
-        self.require(self.shared, "Preserve application logs/config/docs, product files and user data")
+        self.require(self.cleanup, "exact inventoried ephemeral type/hash", "literal-pathspec",
+                     "git ls-files --error-unmatch -- <relative-path>", "every file", "tracked forbids deletion",
+                     "distinguish untracked from Git/path errors", "exact owned temporary root, not merely TMPDIR",
+                     "lstat every component", "symlinks or ancestor escape block deletion",
+                     "Recheck hashes immediately before unlink", "unchanged entry sets/all hashes",
+                     "extra/changed entries", "Never patterns, git clean, broad prune/reset, forced worktrees")
+        self.require(self.shared, "Preserve product files, application logs/config/docs and user data")
 
     def test_delivery_and_cleanup_have_separate_status_and_recovery(self):
-        self.require(self.stage(7, "Report"), "delivery success/pending/blocked",
-                     "delivery-resource cleanup complete/partial/not-started", "diagnostic cleanup complete/partial",
-                     "Target is not cleanup status", "Partial cleanup is not overall complete",
-                     "pr-green retention is intentional not-started/not requested, not failure")
-        self.require(self.shared, "Retain unmerged source branches/worktrees and unique code")
+        self.require(self.finish, "Separate target success from source/temporary cleanup",
+                     "pr-green source retention is intentional", "Complete requires target gates and required cleanup/sync")
+        self.require(self.shared, "Retain unmerged source/unique code", "unsafe cleanup is partial")
+
+    def test_local_sync_is_owned_non_destructive_and_last(self):
+        self.require(self.stage(6, "Clean and sync"), "Read back absence, then sync/rebase")
+        self.require(self.cleanup, "Fetch base remote", "branch/status/operation markers",
+                     "Fast-forward clean local base", "rebase only explicitly owned local commits onto fetched base",
+                     "never shared/published history or unrelated work", "Preserve dirty/divergent unowned branches",
+                     "no reset, automatic stash or forced switch", "Conflicts block sync",
+                     "Read back branch/HEAD/upstream/status")
 
     def test_setup_and_readme_preserve_migration_and_recipe_contract(self):
         for field in ("name", "paths", "depends_on", "environment", "mode", "apply", "verify"):
             self.require(self.setup, "`" + field + "`")
-        self.require(self.setup, "`auto` or `manual`", "Manual command", "identified merge-triggered recipe",
+        self.require(self.setup, "`auto` or `manual`", "manual command", "identified merge-triggered recipe",
                      "finish.deploy_checks", "verification evidence fallback, not an apply recipe",
-                     "helper does not validate project recipes", "Finish preflight", "not guesses")
+                     "helper does not validate project recipes", "kstack-finish preflight", "not guesses")
         for text in (self.setup, self.readme):
             self.require(text, "pr-green", "`complete`", "reinstalling never overrides",
                          "user-owned permissions", "npx skills add ./kstack")
@@ -230,8 +254,7 @@ class RunArtifactContractTests(ContractBase):
             if name != "kstack":
                 self.require(text, "Shared rules: read `../kstack/SKILL.md` first")
         self.require(self.shared, "No saved run artifacts", "never files inside or outside repo",
-                     "No logs, notes, reports, plans, manifests, state files", "redirect/tee",
-                     "requested product/config/docs changes are allowed")
+                     "No saved logs/notes/reports/plans/state", "redirect/tee", "requested changes remain allowed")
 
     def test_no_saved_artifact_directives_across_pack(self):
         forbidden = (r"(?i)(?:keep|load|include) (?:a |the |shared )*durable (?:resource )?manifest",
@@ -240,50 +263,56 @@ class RunArtifactContractTests(ContractBase):
                      r"(?i)(?:ask the agent to write|write a job-owned report file|evidence paths|and the artifact path)",
                      r"(?i)(?:full tables stay in the report|link only shareable evidence)",
                      r"(?i)Keep the report and evidence outside", r"(?i)recovery locations")
-        for name, text in {**self.skills, "README": self.readme}.items():
+        for name, text in {**self.skills, "cleanup": self.cleanup, "README": self.readme}.items():
             for pattern in forbidden:
                 self.assertFalse(re.search(pattern, text), name + ": forbidden retention directive")
 
     def test_every_settled_return_cleans_diagnostic_scratch(self):
-        self.require(self.shared, "Before every settled return", "success, failure, blocked, pending, timeout, pr-green, handoff",
-                     "stop temporary processes by exact PID first", "Capture results in conversation",
-                     "delete exact owned scratch/disposable verifier worktrees", "read back absence",
-                     "never waits for merge/delivery", "Unsafe deletion means cleanup partial with exact blocker")
-        self.require(self.finish, "Shared scratch cleanup is independent")
-        self.require(self.execute, "shared scratch cleanup under Finish safety/readback")
+        self.require(self.shared, "Before every settled return", "stop exact owned temporary PIDs",
+                     "capture results", "delete safe owned scratch/disposable verifiers", "read back absence",
+                     "never waits for merge/delivery", "unsafe cleanup is partial with exact blocker")
+        self.require(self.finish, "every return, even blocked")
+        self.require(self.execute, "shared cleanup safeguards/readback")
 
     def test_no_archive_relocation_or_success_leftover_path_footer(self):
-        self.require(self.shared, "archive/cache relocation", "leftover logs-path footer",
-                     "Limit output", "exact tool-generated overflow logs", "never sweep caches")
-        self.require(self.finish, "Partial cleanup is not overall complete")
-        for text in (*self.skills.values(), self.readme):
+        self.require(self.shared, "archive relocation", "leftover logs-path footer",
+                     "Limit output", "exact owned overflow logs", "never sweep caches")
+        self.require(self.finish, "Complete requires target gates and required cleanup/sync")
+        for text in (*self.skills.values(), self.cleanup, self.readme):
             self.assertNotRegex(text, r"(?i)(?:logs and notes are in|reports saved to|archive (?:the )?(?:logs|reports))")
 
     def test_stdout_collection_resume_and_direct_pr_results(self):
-        self.require(self.shared, "require assignment stdout", "Retry collection/request stdout summary",
-                     "still missing means verification gap, never report files",
-                     "conversation plus actual Git/PR state, never saved logs")
-        self.require(self.finish, "preserve existing descriptions except kstack verification",
-                     "direct results, no report links/paths", "Read back")
+        self.require(self.shared, "require assignment stdout", "retry collection",
+                     "Missing results are verification gaps, never report files",
+                     "conversation plus actual Git/PR state, not saved logs")
+        self.require(self.finish, "preserve existing descriptions except direct verification results",
+                     "then read back")
 
     def test_verify_returns_outcomes_and_deletes_temporary_captures(self):
         self.require(self.verify, "return revision-bound outcomes in chat", "Avoid captures",
-                     "shared owned scratch rules", "shared cleanup and Finish safety/readback rules",
+                     "shared owned scratch rules", "shared cleanup safeguards/readback",
                      "Stop only your processes", "in stdout/chat", "Required behavior that cannot run",
                      "wrong interaction method or inconclusive evidence is BLOCKED")
 
     def test_remote_absence_is_read_before_delete_and_after_failure(self):
-        self.require(self.finish, "git ls-remote --heads <head-remote> refs/heads/<branch>",
-                     "Only successful empty output proves absence", "don't delete absent refs",
-                     "After failed deletion/lease reread", "proven absent succeeds, else retain",
-                     "Errors never prove absence")
+        self.require(self.cleanup, "git ls-remote --heads <head-remote> refs/heads/<branch>",
+                     "Only successful empty output proves absence", "skip absent refs",
+                     "After failure reread", "proven absent succeeds, else retain", "Errors never prove absence")
 
     def test_skill_size_budgets(self):
         sizes = {name: len(text.encode()) for name, text in self.skills.items()}
-        self.assertLessEqual(sum(sizes.values()), 27560)
-        for name, limit in {"kstack": 4000, "kstack-finish": 10000,
-                            "kstack-execute": 4500, "kstack-setup": 4500}.items():
+        limits = {"kstack": 3300, "kstack-finish": 4200, "kstack-execute": 3300,
+                  "kstack-setup": 2600, "kstack-plan": 920, "kstack-debug": 820,
+                  "kstack-review": 1280, "kstack-verify": 1160, "kstack-perf": 940,
+                  "kstack-improve": 680, "kstack-understand": 550}
+        self.assertEqual(set(limits), NAMES)
+        self.assertLessEqual(sum(sizes.values()), 20000)
+        for name, limit in limits.items():
             self.assertLessEqual(sizes[name], limit, name)
+        # Count every Markdown reference too: moving prose cannot evade the pack budget.
+        prompt_bytes = sum(len(path.read_bytes()) for path in (ROOT / "skills").rglob("*.md"))
+        self.assertLessEqual(prompt_bytes, 24500)
+        self.assertLessEqual(len(self.cleanup.encode()), 4700)
 
     def test_stdlib_temporary_directory_leaves_no_owned_fixture_files(self):
         # Minimal fixture data only: demonstrate stdlib lifetime, not a shadow cleanup engine.
@@ -536,6 +565,42 @@ class GitCleanupSemanticsTests(unittest.TestCase):
             self.assertEqual(self.branch_config("worker"), ())
             self.assertEqual(self.local_config_entries(), unrelated)
         # Absence is read-back success: no blind --remove-section (which would error).
+
+    def test_local_sync_fast_forwards_base_then_rebases_owned_commits(self):
+        self.git("switch", "-c", "owned-local")
+        original = self.commit("local.txt", "owned unpublished work\n")
+        self.git("switch", "-c", "delivered", self.base)
+        delivered = self.commit("delivered.txt", "merged remote work\n")
+        self.git("push", "origin", "HEAD:main")
+        self.git("fetch", "origin")
+        self.git("switch", "main")
+        self.git("merge", "--ff-only", "origin/main")
+        self.assertEqual(self.git("rev-parse", "HEAD").stdout.strip(), delivered)
+        self.git("switch", "owned-local")
+        self.git("rebase", "origin/main")
+        self.git("merge-base", "--is-ancestor", delivered, "HEAD")
+        self.assertNotEqual(self.git("rev-parse", "HEAD").stdout.strip(), original)
+        self.assertEqual((self.repo / "local.txt").read_text(), "owned unpublished work\n")
+        self.assertEqual(self.git("status", "--porcelain").stdout, "")
+        self.assertEqual(self.git("ls-remote", "--heads", "origin", "refs/heads/main")
+                         .stdout.split()[0], delivered)
+
+    def test_local_sync_conflict_preserves_commits_for_recovery(self):
+        self.git("switch", "-c", "owned-local")
+        original = self.commit("product.md", "owned local edit\n")
+        self.git("switch", "-c", "delivered", self.base)
+        delivered = self.commit("product.md", "conflicting delivered edit\n")
+        self.git("push", "origin", "HEAD:main")
+        self.git("fetch", "origin")
+        self.git("switch", "owned-local")
+        result = self.git("rebase", "origin/main", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("UU product.md", self.git("status", "--porcelain").stdout)
+        self.assertEqual(self.git("rev-parse", "owned-local").stdout.strip(), original)
+        self.assertEqual(self.git("rev-parse", "origin/main").stdout.strip(), delivered)
+        self.git("rebase", "--abort")
+        self.assertEqual((self.repo / "product.md").read_text(), "owned local edit\n")
+        self.assertEqual(self.git("rev-parse", "HEAD").stdout.strip(), original)
 
     def test_unique_worker_commit_is_not_integrated(self):
         self.git("switch", "-c", "worker")

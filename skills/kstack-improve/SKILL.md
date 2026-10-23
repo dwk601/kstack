@@ -1,16 +1,15 @@
 ---
 name: kstack-improve
-description: Prevent repeated mistakes with structure and checks.
+description: Prevent recurring mistakes with structure and checks.
 disable-model-invocation: true
 ---
 
-# kstack improve
+# kstack-improve
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-1. Find repeated classes in review FAILs, reverts, fixes, PR comments and user corrections. Require two occurrences.
-2. Choose the highest effective level: structure (one state owner/task path; remove old way), types/lint naming the replacement (common patterns: fail only new uses), behavioral test, then AGENTS.md only for judgment calls.
-3. Prove checks fail on real past mistakes and pass correct code.
-4. Commit each class separately on assigned task branch, not unrelated feature work.
+1. Identify a fault class with two evidenced occurrences in reviews, fixes or corrections.
+2. Prefer structure that removes the old path, then types/lint naming its replacement, then behavioral tests. Use AGENTS.md only for judgment calls; gate new uses of widespread legacy patterns.
+3. Prove checks reject past mistakes and accept correct code. Commit each class separately on its assigned branch.
 
-Report class, evidence, chosen level and why higher levels failed.
+Report occurrences, prevention and why stronger options did not fit.

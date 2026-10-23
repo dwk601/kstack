@@ -1,17 +1,13 @@
 ---
 name: kstack-understand
-description: Explain how and why code works, with evidence.
+description: Explain code with source and history evidence.
 disable-model-invocation: true
 ---
 
-# kstack understand
+# kstack-understand
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-Read-only; answer at requested depth.
+Read-only. Trace entrypoints, callers, data/state, side effects, config and tests. For why, check blame, commits, PRs and linked discussions; state when history is missing.
 
-1. Follow entrypoints, callers, data shapes, state, side effects, config and tests.
-2. For why, inspect `git log -L`/`git blame`, shaping commits/PRs (`gh pr view`), linked issues and other available docs/chat/error sources. Empty searches are answers.
-3. Separate observations from inference; name missing evidence.
-
-Return overview, ordered execution path, file:line locations, gotchas and questions. Omit empty sections.
+Answer at requested depth with the execution path, file:line evidence, gotchas and unresolved questions. Separate observations from inference; omit empty sections.

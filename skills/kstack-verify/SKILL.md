@@ -4,16 +4,15 @@ description: Exercise real behavior and return revision-bound outcomes in chat.
 disable-model-invocation: true
 ---
 
-# kstack verify
+# kstack-verify
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-1. Pin revision, scenario and concrete pass condition. Find real recipes in `.kstack/project.json`, docs, scripts or CI; prefer existing e2e/API/CLI drivers.
-2. Isolate checkout, instance, port, data and test account. Wait for the scenario's first step, not merely an open port. Never touch production data.
-3. Drive real user interactions; describe output, responses and side effects in chat. Judge the pass condition, not process startup. Avoid captures; unavoidable minimal test/screenshot data uses shared owned scratch rules.
-4. Compare like behavior on base/head. If base lacks the feature, say so and verify head's added behavior/end state. Never invent baselines or ratios between different workloads.
-5. Before returning, apply shared cleanup and Finish safety/readback rules. Stop only your processes.
+1. Pin revision, scenario and pass condition. Use real e2e/API/CLI recipes from project config, scripts, docs or CI.
+2. Isolate checkout, instance, port, data and account; keep production data untouched. Wait for the scenario's first step, not an open port.
+3. Drive real interactions and check responses/side effects against acceptance. Avoid captures; unavoidable data follows shared owned scratch rules.
+4. Compare matching base/head workloads. If base lacks the feature, verify head's end state without inventing a baseline.
 
-Return `base/head SHAs | PASS/FAIL/BLOCKED | commands | observations | outcomes | diagnostic scratch cleanup` in stdout/chat. Required behavior that cannot run, wrong interaction method or inconclusive evidence is BLOCKED. N/A requires genuine inapplicability and reason.
+Return `base/head | PASS/FAIL/BLOCKED | commands | observations | cleanup` in stdout/chat. Required behavior that cannot run, wrong interaction method or inconclusive evidence is BLOCKED. N/A needs an inapplicability reason.
 
-After standalone success, offer to save a missing project recipe. Swarm lanes report it instead of editing config.
+Stop only your processes; use shared cleanup safeguards/readback. Offer missing recipes after standalone success; swarm lanes report them without editing config.
