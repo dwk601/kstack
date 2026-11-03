@@ -52,6 +52,16 @@ kstack-finish defaults to `complete`: verified merge, postmerge gates and delive
 
 Results/inventory stay in chat/stdout, not saved run artifacts. Every settled return cleans safe owned temporary resources. Source cleanup waits for merge and target gates; unmerged/unrelated/uncertain work is preserved. [Cleanup safeguards](skills/kstack-finish/references/cleanup.md) cover ownership, leases, worktrees, files, config and local sync. Partial cleanup is not overall completion.
 
+## Optional CI efficiency work
+
+The [CI article by Owen Gretzinger](https://x.com/owengretzinger/status/2116291924219060319) informs these recommendations. Its reported speedups are not measurements of this pack. Verification reuse and scheduling rules live in [the shared finish reference](skills/kstack-finish/references/efficiency.md).
+
+Report bottlenecks during delivery; do not automatically change CI. With approval, use kstack-perf to measure queue, setup and execution time, cold/warm caches, CPU, memory and cost, then use kstack-plan and kstack-execute for changes. No paid or larger runners or other cost increases without explicit consent. Run independent lint, typecheck, build and test jobs concurrently within the available CPU and memory budget. Match aggregate task and test-worker concurrency to the machine, and isolate stateful jobs.
+
+Consider compatible main-branch cache seeds keyed by lockfile, toolchain and platform; untrusted PRs must not write trusted caches. A cache is never verification evidence. Reuse initialization only after isolation/reset tests, and adopt faster tools only after benchmarking equivalent checks. Use blobless rather than shallow clones when ancestry is needed. Cancel only owned superseded PR runs for stale heads, never main, postmerge or shared runs.
+
+Affected checks need a proven dependency selector covering shared code, config, lockfiles, toolchains and CI, failing closed on unknowns, missing history or errors. Full required gates at head remain mandatory, with full main/nightly safety nets. Enforce a fast pre-push hook without bypass or `--no-verify`.
+
 ## Prompt design and tests
 
 Skills use direct steps, explicit scope/completion, real checks and shared rules without repeated instructions. Based on Claude's [prompt overview](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview) and guides for [Fable 5.1](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1), [Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5) and [Sonnet 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5). These are prompt-design references, not model defaults.
@@ -60,7 +70,7 @@ Skills use direct steps, explicit scope/completion, real checks and shared rules
 python3 -B -m unittest discover -s tests -v
 ```
 
-Tests cover naming/links, size budgets (including references), written safeguards, model commands and isolated Git semantics. They are not live proof of GitHub merging or deployment, model quality or an end-to-end Herdr run. Git sandboxes use temporary repositories and a file:// remote without network.
+Tests cover naming/links, size budgets (including references), written safeguards, model commands and isolated Git semantics. Written contracts are not live speed proof. They are not live proof of GitHub merging or deployment, model quality or an end-to-end Herdr run. Git sandboxes use temporary repositories and a file:// remote without network.
 
 ## Credits
 
