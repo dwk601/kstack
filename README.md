@@ -56,7 +56,7 @@ Results/inventory stay in chat/stdout, not saved run artifacts. Every settled re
 
 The [CI article by Owen Gretzinger](https://x.com/owengretzinger/status/2116291924219060319) informs these recommendations. Its reported speedups are not measurements of this pack. Verification reuse and scheduling rules live in [the shared finish reference](skills/kstack-finish/references/efficiency.md).
 
-Report bottlenecks during delivery; do not automatically change CI. With approval, use kstack-perf to measure queue, setup and execution time, cold/warm caches, CPU, memory and cost, then use kstack-plan and kstack-execute for changes. No paid or larger runners or other cost increases without explicit consent.
+Report bottlenecks during delivery; do not automatically change CI. With approval, use kstack-perf to measure queue, setup and execution time, cold/warm caches, CPU, memory and cost, then use kstack-plan and kstack-execute for changes. No paid or larger runners or other cost increases without explicit consent. Run independent lint, typecheck, build and test jobs concurrently within the available CPU and memory budget. Match aggregate task and test-worker concurrency to the machine, and isolate stateful jobs.
 
 Consider compatible main-branch cache seeds keyed by lockfile, toolchain and platform; untrusted PRs must not write trusted caches. A cache is never verification evidence. Reuse initialization only after isolation/reset tests, and adopt faster tools only after benchmarking equivalent checks. Use blobless rather than shallow clones when ancestry is needed. Cancel only owned superseded PR runs for stale heads, never main, postmerge or shared runs.
 

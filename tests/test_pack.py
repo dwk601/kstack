@@ -144,6 +144,8 @@ class FinishContractTests(ContractBase):
         self.require(self.readme, "https://x.com/owengretzinger/status/2116291924219060319",
                      "do not automatically change CI", "No paid or larger runners",
                      "without explicit consent", "benchmarking equivalent checks",
+                     "Run independent lint, typecheck, build and test jobs concurrently",
+                     "available CPU and memory budget", "Match aggregate task and test-worker concurrency",
                      "untrusted PRs must not write trusted caches", "A cache is never verification evidence",
                      "failing closed on unknowns, missing history or errors",
                      "Full required gates at head remain mandatory", "full main/nightly safety nets",
@@ -214,6 +216,7 @@ class FinishContractTests(ContractBase):
                      "Never branch -D", "Read back refs/paths/worktree metadata")
         self.require(self.execute, "Shared rules: read `../kstack/SKILL.md` first")
         self.require(self.shared, "Only kstack-finish publishes/merges/deploys", "Retain unmerged source/unique code")
+        self.require(self.cleanup, "Never delete base/shared/unmerged/unrelated resources")
 
     def test_conversation_inventory_records_resources_and_ownership_as_created(self):
         self.require(self.finish, "in chat as created/adopted", "common Git directory", "job, path/ref, role",
@@ -226,7 +229,9 @@ class FinishContractTests(ContractBase):
     def test_resume_and_legacy_adoption_are_bounded(self):
         self.require(self.cleanup, "creation/adoption inventory", "Legacy needs prior proof or bounded user scope",
                      "repo/resources/ownership", "never Projects-wide", "ownership alone is not integration/content safety")
-        self.require(self.cleanup, "Errors never prove absence", "else retain")
+        self.require(self.finish, "Remote ownership follows `references/cleanup.md`")
+        self.require(self.cleanup, "Failed/uncertain checks mean retain and report partial",
+                     "ownership alone is not integration/content safety")
         self.require(self.shared, "conversation plus actual Git/PR state, not saved logs")
 
     def test_per_role_integration_and_exact_merge_chain(self):
