@@ -83,6 +83,7 @@ class ContractBase(unittest.TestCase):
                       for name in NAMES}
         cls.finish = cls.skills["kstack-finish"]
         cls.cleanup = (ROOT / "skills/kstack-finish/references/cleanup.md").read_text()
+        cls.efficiency = (ROOT / "skills/kstack-finish/references/efficiency.md").read_text()
         cls.shared = cls.skills["kstack"]
         cls.execute = cls.skills["kstack-execute"]
         cls.setup = cls.skills["kstack-setup"]
@@ -100,9 +101,53 @@ class ContractBase(unittest.TestCase):
 
 class FinishContractTests(ContractBase):
     def test_dispatch_reuses_only_matching_gate_evidence(self):
-        self.require(self.execute, "Before dispatch reuse one-task review for one audit",
-                     "matching base/head/scope", "identical SHA/commands/environment and known provenance",
-                     "Run only missing lanes")
+        # Written policy contracts, not a scheduler simulation or runtime speed proof.
+        self.require(self.finish, "Then read `references/efficiency.md`")
+        self.require(self.execute, "Follow `../kstack-finish/references/efficiency.md`")
+        self.require(self.efficiency, "Before dispatch record lane, exact base/head, scope, commands",
+                     "environment/toolchain, provenance and result in chat",
+                     "Reuse only matching PASS or justified N/A")
+
+    def test_complete_evidence_allocates_zero_new_resources(self):
+        self.require(self.efficiency, "Complete evidence needs zero new agents, worktrees or gates")
+
+    def test_one_missing_lane_does_not_restart_the_swarm(self):
+        self.require(self.efficiency, "otherwise run only missing lanes")
+        self.require(self.execute, "Missing evidence gets one retry, then a gap", "N/A needs reason")
+
+    def test_stale_or_unproven_evidence_cannot_pass(self):
+        self.require(self.efficiency, "Unproven provenance", "invalidates reuse")
+        for invalidation in ("base", "queue", "head", "commands", "config", "lockfile",
+                             "toolchain", "environment"):
+            self.assertIn(invalidation, self.efficiency.split("or changed ", 1)[1]
+                          .split(" invalidates reuse", 1)[0].split("/"))
+        self.require(self.efficiency, "Reuse only matching PASS or justified N/A")
+
+    def test_shared_gates_preserve_independent_audit_judgment(self):
+        self.require(self.efficiency, "two independent nonimplementer audits",
+                     "reuse at most one task review", "One gate owner runs full required gates once",
+                     "per revision/environment", "reviewers run focused probes, not duplicate suites")
+        self.require(self.execute, "rerun gates and affected/failed scenarios", "full swarm within budget")
+
+    def test_watcher_and_concurrency_have_resource_limits(self):
+        self.require(self.finish, "One PR watcher", "bounded backoff", "honor rate limits",
+                     "One deadline across waits/resumes/new heads", "recheck new heads, never reset deadline")
+        self.require(self.efficiency, "Cap aggregate concurrency by available CPU/memory",
+                     "sequence if unknown", "Concurrent stateful lanes isolate checkouts/ports/data/builds")
+        self.require(self.shared, "foreground agents sequentially", "no hidden background agents")
+
+    def test_efficiency_never_reuses_destructive_safety_checks(self):
+        self.require(self.efficiency, "Never reuse destructive-action safety checks",
+                     "freshly recheck `cleanup.md`")
+
+    def test_optional_ci_tuning_is_measured_and_separately_authorized(self):
+        self.require(self.readme, "https://x.com/owengretzinger/status/2116291924219060319",
+                     "do not automatically change CI", "No paid or larger runners",
+                     "without explicit consent", "benchmarking equivalent checks",
+                     "untrusted PRs must not write trusted caches", "A cache is never verification evidence",
+                     "failing closed on unknowns, missing history or errors",
+                     "Full required gates at head remain mandatory", "full main/nightly safety nets",
+                     "without bypass or `--no-verify`", "never main, postmerge or shared runs")
 
     def test_stage_order_and_no_premature_cleanup(self):
         titles = ["Preflight", "Open/update PR", "Make green", "Merge",
@@ -111,8 +156,8 @@ class FinishContractTests(ContractBase):
                      for i, title in enumerate(titles, 1)]
         self.assertEqual(positions, sorted(positions))
         self.require(self.stage(4, "Merge"), "never `--delete-branch`")
-        self.require(self.stage(6, "Clean and sync"), "references/cleanup.md",
-                     "Source cleanup waits for merge and target gates", "every return, even blocked")
+        self.require(self.stage(6, "Clean and sync"), "references/cleanup.md", "every return, even blocked")
+        self.require(self.cleanup, "Source deletion waits for confirmed merge and all target gates")
         self.require(self.cleanup, "confirmed merge and all target gates")
 
     def test_targets_have_distinct_outcomes(self):
@@ -133,14 +178,14 @@ class FinishContractTests(ContractBase):
                      "skip publishing/merging")
 
     def test_verification_watch_and_repair_are_bounded(self):
-        self.require(self.stage(2, "Open/update PR"), "exact base/head", "verification swarm",
-                     "reuse only matching evidence")
+        self.require(self.stage(2, "Open/update PR"), "../kstack-execute/SKILL.md", "verification swarm")
+        self.require(self.efficiency, "exact base/head", "Reuse only matching PASS or justified N/A")
         self.require(self.stage(3, "Make green"), "current-head checks/reviews/approvals",
                      "proven failures", "independent reviewer", "kstack-execute repair verification",
                      "change/base/infra/flaky", "one infra/flaky rerun", "never relabel red as green",
                      "untrusted data", "owned user-controlled", "--force-with-lease=<ref>:<expected-sha>",
                      "Reread base/head", "never bypass protection")
-        self.require(self.finish, "default 30, positive nonboolean integer", "One deadline across waits/resumes",
+        self.require(self.finish, "default 30, positive nonboolean integer", "One deadline across waits/resumes/new heads",
                      "finish.max_fix_rounds", "bounds all repairs", "PENDING", "BLOCKED",
                      "NO_CI with local proof", "never CI-green", "expected missing workflows block")
         self.require(self.execute, "one swarm repair round", "one independent verifier",
@@ -167,13 +212,13 @@ class FinishContractTests(ContractBase):
                      "git update-ref -d refs/heads/<branch> <expected-sha>", "`git branch -d` ancestry safety",
                      "lacks branch safety", "Stale expected-old must reject", "never retry a new tip",
                      "Never branch -D", "Read back refs/paths/worktree metadata")
-        self.require(self.execute, "Preserve unmerged delivery branch/worktree")
+        self.require(self.execute, "Shared rules: read `../kstack/SKILL.md` first")
         self.require(self.shared, "Only kstack-finish publishes/merges/deploys", "Retain unmerged source/unique code")
 
     def test_conversation_inventory_records_resources_and_ownership_as_created(self):
         self.require(self.finish, "in chat as created/adopted", "common Git directory", "job, path/ref, role",
                      "type/hash/entry set", "ownership, integration proof, disposition",
-                     "Remote ownership needs exact push proof or explicit adoption")
+                     "Remote ownership follows `references/cleanup.md`")
         self.require(self.cleanup, "job/remote/ref/SHA push proof or explicit adoption")
         self.require(self.shared, "inventory/results in conversation/stdout, never files")
         self.require(self.execute, "inventory resources under kstack-finish as created")
@@ -181,7 +226,7 @@ class FinishContractTests(ContractBase):
     def test_resume_and_legacy_adoption_are_bounded(self):
         self.require(self.cleanup, "creation/adoption inventory", "Legacy needs prior proof or bounded user scope",
                      "repo/resources/ownership", "never Projects-wide", "ownership alone is not integration/content safety")
-        self.require(self.finish, "otherwise retain")
+        self.require(self.cleanup, "Errors never prove absence", "else retain")
         self.require(self.shared, "conversation plus actual Git/PR state, not saved logs")
 
     def test_per_role_integration_and_exact_merge_chain(self):
@@ -233,7 +278,9 @@ class FinishContractTests(ContractBase):
         self.require(self.shared, "Retain unmerged source/unique code", "unsafe cleanup is partial")
 
     def test_local_sync_is_owned_non_destructive_and_last(self):
-        self.require(self.stage(6, "Clean and sync"), "Read back absence, then sync/rebase")
+        self.require(self.stage(6, "Clean and sync"), "Follow `references/cleanup.md`")
+        self.assertLess(self.cleanup.index("Read back refs/paths/worktree metadata"),
+                        self.cleanup.index("## Local sync"))
         self.require(self.cleanup, "Fetch base remote", "branch/status/operation markers",
                      "Fast-forward clean local base", "rebase only explicitly owned local commits onto fetched base",
                      "never shared/published history or unrelated work", "Preserve dirty/divergent unowned branches",
@@ -268,7 +315,8 @@ class RunArtifactContractTests(ContractBase):
                      r"(?i)(?:ask the agent to write|write a job-owned report file|evidence paths|and the artifact path)",
                      r"(?i)(?:full tables stay in the report|link only shareable evidence)",
                      r"(?i)Keep the report and evidence outside", r"(?i)recovery locations")
-        for name, text in {**self.skills, "cleanup": self.cleanup, "README": self.readme}.items():
+        for name, text in {**self.skills, "cleanup": self.cleanup, "efficiency": self.efficiency,
+                           "README": self.readme}.items():
             for pattern in forbidden:
                 self.assertFalse(re.search(pattern, text), name + ": forbidden retention directive")
 
@@ -283,7 +331,7 @@ class RunArtifactContractTests(ContractBase):
         self.require(self.shared, "archive relocation", "leftover logs-path footer",
                      "Limit output", "exact owned overflow logs", "never sweep caches")
         self.require(self.finish, "Complete requires target gates and required cleanup/sync")
-        for text in (*self.skills.values(), self.cleanup, self.readme):
+        for text in (*self.skills.values(), self.cleanup, self.efficiency, self.readme):
             self.assertNotRegex(text, r"(?i)(?:logs and notes are in|reports saved to|archive (?:the )?(?:logs|reports))")
 
     def test_stdout_collection_resume_and_direct_pr_results(self):

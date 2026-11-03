@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-Use the chat plan or reconstruct from request/code; inventory resources under kstack-finish as created. Stop before publishing.
+Use chat plan or reconstruct from request/code; inventory resources under kstack-finish as created. Stop before publishing.
 
 ## 1. Frame
 
@@ -16,9 +16,9 @@ Resolve base from request, project, then default branch. Record SHA; create `kst
 
 ## 2. Build and review
 
-Dispatch ready tasks after dependencies integrate. Each worker owns a branch/worktree from integration; use `python3 "$MODELS" cmd workers`. Brief goal, files, acceptance, checks, base SHA and dependencies. Workers implement/check/commit and return `task | SHA | files | checks + results | assumptions`.
+Dispatch ready tasks after dependencies integrate: `python3 "$MODELS" cmd workers`. Each worker owns an integration-based branch/worktree. Brief goal, files, acceptance, checks, base SHA, dependencies; workers implement/check/commit and return `task | SHA | files | checks + results | assumptions`.
 
-Independent `reviewer` uses `../kstack-review/SKILL.md` at frozen base/head. Include scope/regressions for final audit reuse. FAIL returns to worker, bounded by `execution.max_fails`. BLOCKED is not a strike: repair environment or mark partial. Missing worker reports get one fresh attempt after stopping the old writer, then a gap. Skip blocked dependents; preserve work.
+Independent `reviewer`: `../kstack-review/SKILL.md` at frozen base/head, including scope/regressions for audit reuse. FAIL returns to worker, bounded by `execution.max_fails`. BLOCKED is not a strike: repair environment or mark partial. Missing worker reports get one fresh attempt after stopping old writer, then a gap. Skip blocked dependents; preserve work.
 
 ## 3. Integrate
 
@@ -30,19 +30,19 @@ Account for every started agent/task before freezing head. Prove `git merge-base
 
 kstack-finish reuses this stage without builds. Supply request, exact base/head, acceptance, scenarios/pass conditions, commands and outcomes; infer missing scenarios from diff/repo.
 
-Independent lanes use `git worktree add --detach <path> <sha>` at frozen head and `python3 "$MODELS" cmd verifiers --index <lane>`:
+Lanes use `git worktree add --detach <path> <sha>` at frozen head and `python3 "$MODELS" cmd verifiers --index <lane>`:
 
 | Lane | Evidence |
 |---|---|
-| Audit | Two focused kstack-review contexts |
-| Gates | Full checks/lint/typecheck once at head; coordinator may run |
+| Audit | kstack-review |
+| Gates | Full checks/lint/typecheck; coordinator may run |
 | Live | kstack-verify changed user-visible behavior; compare a main scenario to base |
 | Perf | kstack-perf speed targets without edits |
 
-Before dispatch reuse one-task review for one audit at matching base/head/scope; gates require identical SHA/commands/environment and known provenance. Run only missing lanes. Return `base/head | PASS/FAIL/BLOCKED | commands + evidence`. Missing evidence gets one retry, then a gap; N/A needs reason. Base defects count only if copied, worsened or newly exposed.
+Follow `../kstack-finish/references/efficiency.md`. Return `base/head | PASS/FAIL/BLOCKED | commands + evidence`. Missing evidence gets one retry, then a gap; N/A needs reason. Base defects count only if copied, worsened or newly exposed.
 
 Allow one swarm repair round through steps 2–3; kstack-finish uses `finish.max_fix_rounds`. Small repairs/rebases need one independent verifier to inspect diff, rerun gates and affected/failed scenarios, and justify reuse. New behavior/large diffs require full swarm within budget; exhaustion means partial.
 
 ## 5. Report
 
-Report task/revision/check/verdict, lanes, findings and gaps. Completion needs acceptance, required lanes and shared cleanup safeguards/readback. Preserve unmerged delivery branch/worktree; separate delivery-resource and diagnostic cleanup status.
+Report task/revision/check/verdict, lanes, findings and gaps. Completion needs acceptance, required lanes and shared cleanup safeguards/readback; distinguish delivery-resource and diagnostic cleanup.
