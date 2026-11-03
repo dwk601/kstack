@@ -1,6 +1,6 @@
 ---
 name: kstack-finish
-description: Open a PR, fix red checks, merge green, deploy, clean up and sync locally.
+description: Ship verified work through merge, delivery and cleanup.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-Ship existing work: PR → green → merge → deploy → cleanup → local sync.
+PR → green → merge → deploy → cleanup → local sync.
 
 ## Target and inventory
 

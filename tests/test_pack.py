@@ -99,6 +99,11 @@ class ContractBase(unittest.TestCase):
 
 
 class FinishContractTests(ContractBase):
+    def test_dispatch_reuses_only_matching_gate_evidence(self):
+        self.require(self.execute, "Before dispatch reuse one-task review for one audit",
+                     "matching base/head/scope", "identical SHA/commands/environment and known provenance",
+                     "Run only missing lanes")
+
     def test_stage_order_and_no_premature_cleanup(self):
         titles = ["Preflight", "Open/update PR", "Make green", "Merge",
                   "Deploy/verify", "Clean and sync"]

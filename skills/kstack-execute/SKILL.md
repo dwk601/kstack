@@ -1,6 +1,6 @@
 ---
 name: kstack-execute
-description: Implement reviewed tasks, integrate serially and verify.
+description: Implement and verify reviewed tasks.
 disable-model-invocation: true
 ---
 
@@ -28,7 +28,7 @@ Account for every started agent/task before freezing head. Prove `git merge-base
 
 ## 4. Verification swarm
 
-kstack-finish reuses this stage without builds. Supply request, exact base/head, acceptance, scenarios/pass conditions, commands and prior outcomes; infer missing scenarios from diff/repo.
+kstack-finish reuses this stage without builds. Supply request, exact base/head, acceptance, scenarios/pass conditions, commands and outcomes; infer missing scenarios from diff/repo.
 
 Independent lanes use `git worktree add --detach <path> <sha>` at frozen head and `python3 "$MODELS" cmd verifiers --index <lane>`:
 
@@ -39,7 +39,7 @@ Independent lanes use `git worktree add --detach <path> <sha>` at frozen head an
 | Live | kstack-verify changed user-visible behavior; compare a main scenario to base |
 | Perf | kstack-perf speed targets without edits |
 
-Reuse one-task review for one audit at matching base/head/scope; gates require identical SHA/commands/environment. Return `base/head | PASS/FAIL/BLOCKED | commands + evidence`. Missing evidence gets one retry, then a gap; N/A needs reason. Base defects count only if copied, worsened or newly exposed.
+Before dispatch reuse one-task review for one audit at matching base/head/scope; gates require identical SHA/commands/environment and known provenance. Run only missing lanes. Return `base/head | PASS/FAIL/BLOCKED | commands + evidence`. Missing evidence gets one retry, then a gap; N/A needs reason. Base defects count only if copied, worsened or newly exposed.
 
 Allow one swarm repair round through steps 2–3; kstack-finish uses `finish.max_fix_rounds`. Small repairs/rebases need one independent verifier to inspect diff, rerun gates and affected/failed scenarios, and justify reuse. New behavior/large diffs require full swarm within budget; exhaustion means partial.
 
