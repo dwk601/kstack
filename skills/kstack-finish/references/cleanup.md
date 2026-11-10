@@ -1,14 +1,12 @@
 # Cleanup and local sync
 
-For kstack-finish and shared temporary cleanup. Keep proofs in chat. Failed/uncertain checks mean retain and report partial; ownership alone is not integration/content safety.
+For kstack-finish and shared temporary cleanup. Failed/uncertain checks mean retain and report partial; ownership alone is not integration/content safety.
 
 ## Ownership
 
 Use creation/adoption inventory. Remote ownership needs job/remote/ref/SHA push proof or explicit adoption. Legacy needs prior proof or bounded user scope naming repo/resources/ownership, never Projects-wide.
 
 Source deletion waits for confirmed merge and all target gates. Never delete base/shared/unmerged/unrelated resources. Recheck tips: delivery/integration/fix/follow-up needs verified PR-to-merge proof; workers need reviewed-tip ancestry in frozen delivery head and delivery-to-PR-to-merge chain. Squash/rebase needs API commit mapping. Renew after rewrites; retain advanced/unintegrated refs or unique commits. Detached verifiers must match recorded SHA.
-
-Temporary cleanup never waits for merge: capture results, stop exact owned PIDs, remove safe scratch/disposable verifiers and read back absence on every settled return.
 
 ## Remote refs
 

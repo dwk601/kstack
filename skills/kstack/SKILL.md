@@ -19,11 +19,11 @@ All skills inherit these rules. Resolve sibling skills at `../<skill-name>/SKILL
 
 ## Shared rules
 
-- Complete requested scope without reasking; stop after acceptance/checks or a named blocker/budget. Report unrelated improvements instead of implementing them.
+- Complete requested scope without reasking; stop after acceptance/checks or a named blocker/budget. Report, don't implement, unrelated improvements.
 - Prefer targeted edits and repo-sized tests. Run real checks; syntax/failed startup is insufficient. Never weaken checks: unavailable required checks are BLOCKED; unmet acceptance is partial.
-- Code changes use kstack-plan → kstack-execute. Assigned workers skip nested workflows/agents. One writer per branch/worktree; reviewers/verifiers leave source unchanged.
+- Assigned workers skip nested workflows/agents. One writer per branch/worktree; reviewers/verifiers leave source unchanged.
 - Only kstack-finish publishes/merges/deploys. Read `../kstack-finish/SKILL.md` for inventory; use its cleanup reference for resource deletion, without starting delivery.
-- Batch independent calls. Update at start/milestones; finish with results/evidence/blockers. Distinguish measured facts/inference/guesses.
+- Batch independent calls. Update at start/milestones; finish with results/evidence/blockers. Distinguish measured facts/inference/guesses. Hand off unresolved findings/evidence, not reasoning/transcripts.
 
 ## No saved run artifacts
 

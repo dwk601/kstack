@@ -18,13 +18,13 @@ Resolve base from request, project, then default branch. Record SHA; create `kst
 
 Dispatch ready tasks after dependencies integrate: `python3 "$MODELS" cmd workers`. Each worker owns an integration-based branch/worktree. Brief goal, files, acceptance, checks, base SHA, dependencies; workers implement/check/commit and return `task | SHA | files | checks + results | assumptions`.
 
-Independent `reviewer`: `../kstack-review/SKILL.md` at frozen base/head, including scope/regressions for audit reuse. FAIL returns to worker, bounded by `execution.max_fails`. BLOCKED is not a strike: repair environment or mark partial. Missing worker reports get one fresh attempt after stopping old writer, then a gap. Skip blocked dependents; preserve work.
+Independent `reviewer`: `../kstack-review/SKILL.md` task review at frozen base/head. FAIL returns to worker, bounded by `execution.max_fails`. BLOCKED is not a strike: repair environment or mark partial. Missing worker reports get one fresh attempt after stopping old writer, then a gap. Skip blocked dependents; preserve work.
 
 ## 3. Integrate
 
 Pause worker; serially rebase, rerun checks and fast-forward. Worker resolves conflicts; reviewer checks. Record reviewed final worker tip after rebase, evidence and integration SHA; unlock dependents.
 
-Account for every started agent/task before freezing head. Prove `git merge-base --is-ancestor <worker-tip> <frozen-head>`, not PR-head equality. Retain advanced/unintegrated refs. Renew proof after rewrites or retain. Unfinished tasks mean partial.
+Account for every started agent/task and known repair before freezing head. Prove `git merge-base --is-ancestor <worker-tip> <frozen-head>`, not PR-head equality. Retain advanced/unintegrated refs. Renew proof after rewrites or retain. Unfinished tasks mean partial.
 
 ## 4. Verification swarm
 
@@ -41,7 +41,7 @@ Lanes use `git worktree add --detach <path> <sha>` at frozen head and `python3 "
 
 Follow `../kstack-finish/references/efficiency.md`. Return `base/head | PASS/FAIL/BLOCKED | commands + evidence`. Missing evidence gets one retry, then a gap; N/A needs reason. Base defects count only if copied, worsened or newly exposed.
 
-Allow one swarm repair round through steps 2–3; kstack-finish uses `finish.max_fix_rounds`. Small repairs/rebases need one independent verifier to inspect diff, rerun gates and affected/failed scenarios, and justify reuse. New behavior/large diffs require full swarm within budget; exhaustion means partial.
+Allow one swarm repair round through steps 2–3, batching all lanes' findings; kstack-finish uses `finish.max_fix_rounds`. Small repairs/rebases need one independent verifier to inspect diff, rerun gates and affected/failed scenarios, and justify reuse per lane. New behavior/large diffs require full swarm within budget; exhaustion means partial.
 
 ## 5. Report
 

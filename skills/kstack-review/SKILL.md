@@ -8,11 +8,11 @@ disable-model-invocation: true
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-Use a fresh configured reviewer, not the implementer. Leave source/tests unchanged.
+Use a fresh configured reviewer, not the implementer.
 
 - **Plan:** check code facts, scope, file ownership, dependencies and acceptance; identify the chat plan, not SHAs.
-- **Code:** pin base/head, compare the task diff to acceptance and run task checks/lint.
-- **Audit:** inspect the combined diff for assigned scope/regressions. Validate gate evidence and run focused probes, not unrelated suites.
+- **Task:** pin base/head; judge one task's diff against acceptance; run task checks/lint.
+- **Audit:** at frozen head, judge what task reviews cannot: cross-task interactions, integration edits, unreviewed changes, request scope/regressions. Validate gate evidence; probe, don't rerun suites.
 
 Trace callers, data/wire formats, flags, dependencies, config and shared state beyond the diff. Prove safety assumptions with code/runtime evidence; cite applicable repo rules. Check correctness, edges, root cause and complexity.
 

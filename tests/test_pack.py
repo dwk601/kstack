@@ -124,10 +124,35 @@ class FinishContractTests(ContractBase):
         self.require(self.efficiency, "Reuse only matching PASS or justified N/A")
 
     def test_shared_gates_preserve_independent_audit_judgment(self):
-        self.require(self.efficiency, "two independent nonimplementer audits",
-                     "reuse at most one task review", "One gate owner runs full required gates once",
+        self.require(self.efficiency, "One gate owner runs full required gates once",
                      "per revision/environment", "reviewers run focused probes, not duplicate suites")
         self.require(self.execute, "rerun gates and affected/failed scenarios", "full swarm within budget")
+
+    def test_task_review_and_integration_audit_are_separate_evidence(self):
+        review = self.skills["kstack-review"]
+        task = review.split("- **Task:**", 1)[1].split("\n", 1)[0]
+        audit = review.split("- **Audit:**", 1)[1].split("\n", 1)[0]
+        self.require(task, "one task's diff against acceptance", "task checks/lint")
+        self.require(audit, "at frozen head", "what task reviews cannot", "cross-task interactions",
+                     "integration edits", "unreviewed changes", "request scope/regressions",
+                     "don't rerun suites")
+        self.require(self.execute, "task review at frozen base/head", "| Audit | kstack-review |")
+        self.assertNotIn("audit reuse", self.execute)
+        self.require(self.efficiency, "Task reviews (unreviewed work: one task) and the frozen-head audit",
+                     "separate nonimplementers", "neither replaces the other")
+
+    def test_known_repairs_are_batched_before_a_new_frozen_head(self):
+        self.require(self.execute, "every started agent/task and known repair before freezing head",
+                     "one swarm repair round through steps 2–3, batching all lanes' findings")
+        self.require(self.stage(3, "Make green"), "Batch proven failures through fixer")
+
+    def test_small_change_reuse_is_lane_specific_and_fails_closed(self):
+        self.require(self.efficiency, "small repair/rebase heads keep only non-gate results",
+                     "the old→new diff provably cannot reach")
+        self.require(self.execute, "one independent verifier", "justify reuse per lane")
+
+    def test_handoffs_carry_unresolved_evidence_not_reasoning(self):
+        self.require(self.shared, "Hand off unresolved findings/evidence, not reasoning/transcripts")
 
     def test_watcher_and_concurrency_have_resource_limits(self):
         self.require(self.finish, "One PR watcher", "bounded backoff", "honor rate limits",
