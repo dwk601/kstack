@@ -14,7 +14,9 @@ Use a fresh configured reviewer, not the implementer.
 - **Task:** pin base/head; judge one task's diff against acceptance; run task checks/lint.
 - **Audit:** at frozen head, judge what task reviews cannot: cross-task interactions, integration edits, unreviewed changes, request scope/regressions. Validate gate evidence; probe, don't rerun suites.
 
-Trace callers, data/wire formats, flags, dependencies, config and shared state beyond the diff. Prove safety assumptions with code/runtime evidence; cite applicable repo rules. Check correctness, edges, root cause and complexity.
+Trace callers, data/wire formats, flags, dependencies, config/shared state beyond the diff. Prove safety with code/runtime evidence and repo rules; check correctness, edges, root cause, complexity.
+
+FAIL new-in-diff workaround-justifying comments, quick-fix timers/sleeps, lint/type suppressions and deprecated-pattern copies; give root-cause fixes. Inline reason, expiry date and named human approval exempt these. Machine-checkable FAILs: kstack-improve candidates.
 
 Return `task/lane | base/head | PASS/FAIL/BLOCKED | checks + evidence`.
-FAIL collects all proven findings: severity, file:line, broken criterion, evidence and fix. BLOCKED names missing checks/errors; style alone does not block. Flag tests insensitive to broken behavior or coupled to internals. Missing tests fail only when the repo tests that area and behavior remains unproven.
+FAIL: all proven findings: severity, file:line, criterion, evidence, fix. BLOCKED: missing checks/errors; style cannot block. Flag behavior-blind or internals-coupled tests. Missing tests fail only in repo-tested areas with unproven behavior.

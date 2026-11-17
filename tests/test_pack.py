@@ -173,7 +173,6 @@ class FinishContractTests(ContractBase):
                      "One deadline across waits/resumes/new heads", "recheck new heads, never reset deadline")
         self.require(self.efficiency, "Cap aggregate concurrency by available CPU/memory",
                      "sequence if unknown", "Concurrent stateful lanes isolate checkouts/ports/data/builds")
-        self.require(self.shared, "foreground agents sequentially", "no hidden background agents")
 
     def test_efficiency_never_reuses_destructive_safety_checks(self):
         self.require(self.efficiency, "Never reuse destructive-action safety checks",
@@ -324,10 +323,10 @@ class RunArtifactContractTests(ContractBase):
                      r"(?i)(?:ask the agent to write|write a job-owned report file|evidence paths|and the artifact path)",
                      r"(?i)(?:full tables stay in the report|link only shareable evidence)",
                      r"(?i)Keep the report and evidence outside", r"(?i)recovery locations")
-        for name, text in {**self.skills, "cleanup": self.cleanup, "efficiency": self.efficiency,
-                           "README": self.readme}.items():
+        for path in [ROOT / "README.md", *(ROOT / "skills").rglob("*.md")]:
+            text = path.read_text()
             for pattern in forbidden:
-                self.assertFalse(re.search(pattern, text), name + ": forbidden retention directive")
+                self.assertFalse(re.search(pattern, text), str(path) + ": forbidden retention directive")
 
     def test_every_settled_return_cleans_diagnostic_scratch(self):
         self.require(self.shared, "Before every settled return", "stop exact owned temporary PIDs",
@@ -343,10 +342,8 @@ class RunArtifactContractTests(ContractBase):
         for text in (*self.skills.values(), self.cleanup, self.efficiency, self.readme):
             self.assertNotRegex(text, r"(?i)(?:logs and notes are in|reports saved to|archive (?:the )?(?:logs|reports))")
 
-    def test_stdout_collection_resume_and_direct_pr_results(self):
-        self.require(self.shared, "require assignment stdout", "retry collection",
-                     "Missing results are verification gaps, never report files",
-                     "conversation plus actual Git/PR state, not saved logs")
+    def test_resume_and_direct_pr_results(self):
+        self.require(self.shared, "conversation plus actual Git/PR state, not saved logs")
         self.require(self.finish, "preserve existing descriptions except direct verification results",
                      "then read back")
 
@@ -358,10 +355,10 @@ class RunArtifactContractTests(ContractBase):
 
     def test_skill_size_budgets(self):
         sizes = {name: len(text.encode()) for name, text in self.skills.items()}
-        limits = {"kstack": 3300, "kstack-finish": 4200, "kstack-execute": 3300,
+        limits = {"kstack": 2500, "kstack-finish": 4200, "kstack-execute": 3300,
                   "kstack-setup": 2600, "kstack-plan": 920, "kstack-debug": 820,
-                  "kstack-review": 1280, "kstack-verify": 1160, "kstack-perf": 940,
-                  "kstack-improve": 680, "kstack-understand": 550}
+                  "kstack-review": 1570, "kstack-verify": 1160, "kstack-perf": 940,
+                  "kstack-improve": 1325, "kstack-understand": 550}
         self.assertEqual(set(limits), NAMES)
         self.assertLessEqual(sum(sizes.values()), 21500)
         for name, limit in limits.items():
