@@ -50,7 +50,7 @@ python3 skills/kstack-setup/scripts/kstack-models validate --check
 
 kstack-finish defaults to `complete`: verified merge, postmerge gates and delivery of every affected app. Permissions, real recipes and evidence are required; missing requirements block. `finish.deploy_checks` verifies delivery but is not an apply recipe.
 
-Results/inventory stay in chat/stdout, not saved run artifacts. Every settled return cleans safe owned temporary resources. Source cleanup waits for merge and target gates; unmerged/unrelated/uncertain work is preserved. [Cleanup safeguards](skills/kstack-finish/references/cleanup.md) cover ownership, leases, worktrees, files, config and local sync. Partial cleanup is not overall completion.
+Results/inventory stay in chat/stdout, not saved run artifacts. Every settled return cleans safe owned temporary resources. Source cleanup waits for merge and target gates; unmerged/unrelated/uncertain work is preserved. [Cleanup safeguards](skills/kstack-finish/references/cleanup.md) pair ownership judgment with the tested, stateless `kstack-git` script for Git, scratch and sync mechanics. Partial cleanup is not overall completion.
 
 ## Optional CI efficiency work
 
@@ -70,7 +70,7 @@ Skills use direct steps, explicit scope/completion, real checks and shared rules
 python3 -B -m unittest discover -s tests -v
 ```
 
-Tests cover naming/links, size budgets (including references), written safeguards, model commands and isolated Git semantics. Written contracts are not live speed proof. They are not live proof of GitHub merging or deployment, model quality or an end-to-end Herdr run. Git sandboxes use temporary repositories and a file:// remote without network.
+Tests cover naming/subcommand links, size budgets, written safeguards, model commands and executable Git cleanup/sync scenarios with a fake `gh` merge API. Written contracts are not live speed proof. They are not live proof of GitHub merging or deployment, model quality or an end-to-end Herdr run. Git sandboxes use temporary repositories and a file:// remote without network.
 
 ## Credits
 

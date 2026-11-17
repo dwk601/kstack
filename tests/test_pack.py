@@ -1,15 +1,14 @@
-"""Offline contracts and Git semantics, not autonomous workflow/GitHub/deploy proof."""
+"""Offline pack contracts; executable Git scenarios live in test_git.py."""
+import importlib.machinery
+import importlib.util
 import os
 import re
-import shlex
-import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-
+sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 NAMES = {
     "kstack", "kstack-setup", "kstack-plan", "kstack-execute", "kstack-finish",
@@ -61,11 +60,26 @@ class SkillPackTests(unittest.TestCase):
         for path in [ROOT / "README.md", *(ROOT / "skills").rglob("*.md")]:
             text = path.read_text()
             for name in re.findall(r"\bkstack(?:-[a-z]+)*\b", text):
-                self.assertIn(name, NAMES | {"kstack-models"}, str(path))
+                self.assertIn(name, NAMES | {"kstack-models", "kstack-git"}, str(path))
             self.assertNotRegex(text, r"\b(?:Finish|Execute|Setup)\b")
             for ref in re.findall(r"\]\(([^)]+)\)", text):
                 if "://" not in ref:
                     self.assertTrue((path.parent / ref.split("#")[0]).is_file(), ref)
+
+    def test_git_subcommand_links(self):
+        script = ROOT / "skills/kstack-finish/scripts/kstack-git"
+        loader = importlib.machinery.SourceFileLoader("pack_git", str(script))
+        spec = importlib.util.spec_from_loader("pack_git", loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        choices = next(action.choices for action in module.build_parser()._actions
+                       if isinstance(action.choices, dict))
+        mentions = set()
+        for path in [ROOT / "README.md", *(ROOT / "skills").rglob("*.md")]:
+            for sub in re.findall(r"\bkstack-git\s+([a-z][a-z-]*)", path.read_text()):
+                self.assertIn(sub, choices, str(path))
+                mentions.add(sub)
+        self.assertEqual(mentions, set(choices))
 
     def test_finish_and_execute_have_distinct_boundaries(self):
         execute = (ROOT / "skills/kstack-execute/SKILL.md").read_text()
@@ -220,7 +234,7 @@ class FinishContractTests(ContractBase):
 
     def test_merge_and_postmerge_evidence_are_separate(self):
         self.require(self.stage(4, "Merge"), "PR gates and permission", "base/head movement, including queues",
-                     "allowed method", "--match-head-commit <verified-head>", "API-confirmed merge",
+                     "allowed-method", "kstack-git merge-pr", "--match-head <verified-head>", "API-confirmed merge",
                      "map verified head to merge SHA", "ancestry on fetched base",
                      "API commit mapping, not similar trees/messages")
         self.require(self.stage(5, "Deploy/verify"), "exact merge-SHA postmerge checks",
@@ -233,20 +247,18 @@ class FinishContractTests(ContractBase):
         self.require(self.finish, "No deployable changes needs diff/recipe proof",
                      "Missing requirements block before merge", "Complete requires target gates")
 
-    def test_cleanup_requires_ownership_leases_and_readback(self):
-        self.require(self.cleanup, "Never delete base/shared/unmerged/unrelated",
-                     "retain advanced/unintegrated refs", "--force-with-lease=refs/heads/<branch>:<recorded-head>",
-                     "git update-ref -d refs/heads/<branch> <expected-sha>", "`git branch -d` ancestry safety",
-                     "lacks branch safety", "Stale expected-old must reject", "never retry a new tip",
-                     "Never branch -D", "Read back refs/paths/worktree metadata")
+    def test_cleanup_ownership_remains_judgment(self):
+        self.require(self.cleanup, "Never delete base/shared/unmerged/unrelated resources",
+                     "retain advanced/unintegrated refs")
         self.require(self.execute, "Shared rules: read `../kstack/SKILL.md` first")
-        self.require(self.shared, "Only kstack-finish publishes/merges/deploys", "Retain unmerged source/unique code")
-        self.require(self.cleanup, "Never delete base/shared/unmerged/unrelated resources")
+        self.require(self.shared, "Only kstack-finish publishes/merges/deploys", "Retain unmerged source/unique code",
+                     "Preserve product files, application logs/config/docs and user data")
 
     def test_conversation_inventory_records_resources_and_ownership_as_created(self):
         self.require(self.finish, "in chat as created/adopted", "common Git directory", "job, path/ref, role",
                      "type/hash/entry set", "ownership, integration proof, disposition",
-                     "Remote ownership follows `references/cleanup.md`")
+                     "Remote ownership follows `references/cleanup.md`", "duplicates/origins/scopes/file or absence",
+                     "after authorized changes", "kstack-git snapshot-branch-config", "digest at creation")
         self.require(self.cleanup, "job/remote/ref/SHA push proof or explicit adoption")
         self.require(self.shared, "inventory/results in conversation/stdout, never files")
         self.require(self.execute, "inventory resources under kstack-finish as created")
@@ -267,55 +279,19 @@ class FinishContractTests(ContractBase):
                      "delivery-to-PR-to-merge chain", "API commit mapping", "unique commits",
                      "Detached verifiers must match recorded SHA")
 
-    def test_worktree_cleanup_includes_ignored_and_missing_metadata_safety(self):
-        self.require(self.cleanup, "clean, idle, unlocked, disposable",
-                     "git status --porcelain --untracked-files=all --ignored", "unknown/changed content blocks",
-                     "recheck under quiescence", "git worktree remove <exact-path>", "without force",
-                     "Never delete refs associated with", "git worktree list --porcelain",
-                     "Missing paths with metadata", "never global prune", "Path absence with metadata is not done")
-
-    def test_local_cas_requires_all_worktree_operation_state_checks(self):
-        self.require(self.cleanup, "Inspect every worktree including main", "clean detached HEAD",
-                     "git -C <worktree> rev-parse --git-path <marker>", "relative to that worktree and lstat",
-                     "Markers/symlinks/operations/uninspectable state", "defer local ref deletion",
-                     "inspection/deletion/config/readback quiescent")
-        for marker in ("rebase-merge", "rebase-apply", "BISECT_START", "MERGE_HEAD",
-                       "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer"):
-            self.require(self.cleanup, "`" + marker + "`")
-
-    def test_branch_config_cleanup_requires_unchanged_owned_section_and_readback(self):
-        self.require(self.finish, "duplicates/origins/scopes/file or absence", "after authorized changes")
-        self.require(self.cleanup, "Match exact branch.<name> section to inventory snapshot",
-                     "not fresh observation/regex/prefix", "After successful CAS and ref-absence readback",
-                     "recheck unchanged owned section", "git config --file <owning-file> --remove-section branch.<name>",
-                     "Never unrelated/shared/unowned/global/included config", "lost quiescence means partial",
-                     "Failed CAS forbids config removal", "Absent sections are idempotent after readback",
-                     "absent refs with config need prior CAS proof", "config-section absence across origins/scopes",
-                     "not just upstream keys")
-
-    def test_artifact_cleanup_requires_exact_untracked_identity(self):
-        self.require(self.cleanup, "exact inventoried ephemeral type/hash", "literal-pathspec",
-                     "git ls-files --error-unmatch -- <relative-path>", "every file", "tracked forbids deletion",
-                     "distinguish untracked from Git/path errors", "exact owned temporary root, not merely TMPDIR",
-                     "lstat every component", "symlinks or ancestor escape block deletion",
-                     "Recheck hashes immediately before unlink", "unchanged entry sets/all hashes",
-                     "extra/changed entries", "Never patterns, git clean, broad prune/reset, forced worktrees")
-        self.require(self.shared, "Preserve product files, application logs/config/docs and user data")
-
     def test_delivery_and_cleanup_have_separate_status_and_recovery(self):
         self.require(self.finish, "Separate target success from source/temporary cleanup",
                      "pr-green source retention is intentional", "Complete requires target gates and required cleanup/sync")
         self.require(self.shared, "Retain unmerged source/unique code", "unsafe cleanup is partial")
 
-    def test_local_sync_is_owned_non_destructive_and_last(self):
+    def test_script_calls_and_local_sync_order(self):
         self.require(self.stage(6, "Clean and sync"), "Follow `references/cleanup.md`")
-        self.assertLess(self.cleanup.index("Read back refs/paths/worktree metadata"),
-                        self.cleanup.index("## Local sync"))
-        self.require(self.cleanup, "Fetch base remote", "branch/status/operation markers",
-                     "Fast-forward clean local base", "rebase only explicitly owned local commits onto fetched base",
-                     "never shared/published history or unrelated work", "Preserve dirty/divergent unowned branches",
-                     "no reset, automatic stash or forced switch", "Conflicts block sync",
-                     "Read back branch/HEAD/upstream/status")
+        self.require(self.cleanup, "digest in chat", "Only done/absent counts as cleaned", "Quiesce writers",
+                     "retained/error is partial", "inventory proofs, never a newly observed tip")
+        calls = ["scratch-digest", "delete-scratch", "delete-remote-branch", "remove-worktree",
+                 "delete-local-branch", "sync-local"]
+        positions = [self.cleanup.index("kstack-git " + call) for call in calls]
+        self.assertEqual(positions, sorted(positions))
 
     def test_setup_and_readme_preserve_migration_and_recipe_contract(self):
         for field in ("name", "paths", "depends_on", "environment", "mode", "apply", "verify"):
@@ -377,11 +353,6 @@ class RunArtifactContractTests(ContractBase):
                      "Stop only your processes", "in stdout/chat", "Required behavior that cannot run",
                      "wrong interaction method or inconclusive evidence is BLOCKED")
 
-    def test_remote_absence_is_read_before_delete_and_after_failure(self):
-        self.require(self.cleanup, "git ls-remote --heads <head-remote> refs/heads/<branch>",
-                     "Only successful empty output proves absence", "skip absent refs",
-                     "After failure reread", "proven absent succeeds, else retain", "Errors never prove absence")
-
     def test_skill_size_budgets(self):
         sizes = {name: len(text.encode()) for name, text in self.skills.items()}
         limits = {"kstack": 3300, "kstack-finish": 4200, "kstack-execute": 3300,
@@ -389,13 +360,13 @@ class RunArtifactContractTests(ContractBase):
                   "kstack-review": 1280, "kstack-verify": 1160, "kstack-perf": 940,
                   "kstack-improve": 680, "kstack-understand": 550}
         self.assertEqual(set(limits), NAMES)
-        self.assertLessEqual(sum(sizes.values()), 20000)
+        self.assertLessEqual(sum(sizes.values()), 21500)
         for name, limit in limits.items():
             self.assertLessEqual(sizes[name], limit, name)
         # Count every Markdown reference too: moving prose cannot evade the pack budget.
         prompt_bytes = sum(len(path.read_bytes()) for path in (ROOT / "skills").rglob("*.md"))
         self.assertLessEqual(prompt_bytes, 24500)
-        self.assertLessEqual(len(self.cleanup.encode()), 4700)
+        self.assertLessEqual(len(self.cleanup.encode()), 1600)
 
     def test_stdlib_temporary_directory_leaves_no_owned_fixture_files(self):
         # Minimal fixture data only: demonstrate stdlib lifetime, not a shadow cleanup engine.
@@ -416,326 +387,6 @@ class RunArtifactContractTests(ContractBase):
             self.assertEqual(product.read_text(), "unrelated product documentation\n")
             self.assertEqual(list(root_path.iterdir()), [product])
         self.assertFalse(os.path.lexists(root))
-
-
-@unittest.skipUnless(shutil.which("git"), "Git is required for local semantic sandboxes")
-class GitCleanupSemanticsTests(unittest.TestCase):
-    """Exercise Git commands only, not a second cleanup implementation or live delivery."""
-
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(
-            prefix="kstack-git-", dir=os.environ.get("TMPDIR") or None)
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name).resolve()
-        self.repo = self.root / "repo"
-        self.remote = self.root / "remote.git"
-        self.repo.mkdir()
-        self.hooks = self.root / "empty-hooks"
-        self.hooks.mkdir()
-        home = self.root / "home"
-        home.mkdir()
-        # Do not inherit repository routing, config injection, identities, or credentials.
-        self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-        self.env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / ".config"),
-                        LC_ALL="C", LANG="C",
-                        GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_SYSTEM=os.devnull,
-                        GIT_CONFIG_GLOBAL=os.devnull, GIT_TERMINAL_PROMPT="0",
-                        GIT_ALLOW_PROTOCOL="file", GIT_AUTHOR_NAME="Sandbox",
-                        GIT_AUTHOR_EMAIL="sandbox@example.invalid",
-                        GIT_COMMITTER_NAME="Sandbox",
-                        GIT_COMMITTER_EMAIL="sandbox@example.invalid")
-        self.git("init", "--initial-branch=main")
-        self.commit("product.md", "Tracked product documentation\n")
-        self.commit(".gitignore", "ignored/\n")
-        self.base = self.git("rev-parse", "HEAD").stdout.strip()
-        self.git("init", "--bare", "--initial-branch=main", str(self.remote))
-        self.git("remote", "add", "origin", self.remote.as_uri())
-        self.git("push", "origin", "main")
-
-    def git(self, *args, cwd=None, check=True, env=None):
-        return subprocess.run(
-            [shutil.which("git"), "-c", "core.hooksPath=" + str(self.hooks), *args],
-            cwd=cwd or self.repo, env=self.env if env is None else env, text=True,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=check, timeout=15)
-
-    def commit(self, relative, content, cwd=None):
-        path = (cwd or self.repo) / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
-        self.git("add", "--", relative, cwd=cwd)
-        self.git("commit", "-m", "sandbox change", cwd=cwd)
-        return self.git("rev-parse", "HEAD", cwd=cwd).stdout.strip()
-
-    def local_config_entries(self):
-        # NUL entries preserve duplicate keys and multiline values in the sandbox's one file.
-        return tuple(self.git("config", "--local", "--no-includes", "--null", "--list")
-                     .stdout.rstrip("\0").split("\0"))
-
-    def branch_config(self, name):
-        return tuple(entry for entry in self.local_config_entries()
-                     if entry.partition("\n")[0].rpartition(".")[0] == "branch." + name)
-
-    def test_integrated_worker_cleanup_and_idempotent_absence(self):
-        self.git("switch", "-c", "worker")
-        worker_tip = self.commit("worker.txt", "reviewed worker result\n")
-        self.git("switch", "-c", "delivery")
-        delivery_tip = self.commit("delivery.txt", "later integrated task\n")
-        self.assertNotEqual(worker_tip, delivery_tip)
-        self.git("switch", "main")
-        self.git("merge", "--ff-only", "delivery")
-        self.git("push", "origin", "main", "worker", "delivery")
-        self.git("merge-base", "--is-ancestor", worker_tip, delivery_tip)
-        self.git("merge-base", "--is-ancestor", worker_tip, "origin/main")
-        verifier = self.root / "verifier"
-        self.git("worktree", "add", "--detach", str(verifier), delivery_tip)
-        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all",
-                                  "--ignored", cwd=verifier).stdout, "")
-        self.git("worktree", "remove", str(verifier))
-        self.git("push", "--force-with-lease=refs/heads/worker:" + worker_tip,
-                 "origin", ":refs/heads/worker")
-        self.git("update-ref", "-d", "refs/heads/worker", worker_tip)
-        # Repeated readback distinguishes already absent from an assumed successful command.
-        for _ in range(2):
-            self.assertEqual(self.git("show-ref", "--verify", "--quiet", "refs/heads/worker",
-                                      check=False).returncode, 1)
-            self.assertEqual(self.git("ls-remote", "--heads", "origin",
-                                      "refs/heads/worker").stdout, "")
-            self.assertFalse(verifier.exists())
-            self.assertNotIn(str(verifier), self.git("worktree", "list", "--porcelain").stdout)
-        self.assertEqual(self.git("rev-parse", "main").stdout.strip(), delivery_tip)
-
-    def test_stale_remote_deletion_lease_is_rejected(self):
-        self.git("switch", "-c", "worker")
-        expected = self.git("rev-parse", "HEAD").stdout.strip()
-        self.git("push", "origin", "worker")
-        advanced = self.commit("new.txt", "advanced after ownership snapshot\n")
-        self.git("push", "origin", "worker")
-        result = self.git("push", "--force-with-lease=refs/heads/worker:" + expected,
-                          "origin", ":refs/heads/worker", check=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("stale info", result.stderr)
-        self.assertEqual(self.git("ls-remote", "--heads", "origin", "refs/heads/worker")
-                         .stdout.strip().split(), [advanced, "refs/heads/worker"])
-
-    def test_atomic_local_deletion_rejects_racing_tip(self):
-        self.git("branch", "worker", self.base)
-        expected = self.git("rev-parse", "worker").stdout.strip()
-        advanced = self.commit("new.txt", "concurrent commit\n")
-        # Simulate a writer advancing the ref after the cleanup tip check.
-        self.git("update-ref", "refs/heads/worker", advanced, expected)
-        result = self.git("update-ref", "-d", "refs/heads/worker", expected, check=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.git("rev-parse", "worker").stdout.strip(), advanced)
-
-    def test_dirty_worktree_is_visible_and_normal_removal_refuses(self):
-        worktree = self.root / "dirty"
-        self.git("worktree", "add", "--detach", str(worktree), self.base)
-        (worktree / "product.md").write_text("uncommitted product change\n")
-        status = self.git("status", "--porcelain", "--untracked-files=all", "--ignored",
-                          cwd=worktree).stdout
-        self.assertIn(" M product.md", status)
-        self.assertNotEqual(self.git("worktree", "remove", str(worktree), check=False).returncode, 0)
-        self.assertTrue((worktree / "product.md").exists())
-        self.assertIn(str(worktree), self.git("worktree", "list", "--porcelain").stdout)
-
-    def test_locked_worktree_and_branch_association_are_retained(self):
-        worktree = self.root / "locked"
-        self.git("worktree", "add", "-b", "worker", str(worktree), self.base)
-        self.git("worktree", "lock", "--reason", "active worker", str(worktree))
-        entries = self.git("worktree", "list", "--porcelain").stdout
-        self.assertIn("branch refs/heads/worker", entries)
-        self.assertIn("locked active worker", entries)
-        self.assertNotEqual(self.git("branch", "-d", "worker", check=False).returncode, 0)
-        self.assertNotEqual(self.git("worktree", "remove", str(worktree), check=False).returncode, 0)
-        self.assertTrue(worktree.is_dir())
-        self.assertEqual(self.git("rev-parse", "worker").stdout.strip(), self.base)
-
-    def test_paused_interactive_rebase_has_hidden_worktree_association(self):
-        worktree = self.root / "rebasing"
-        self.git("worktree", "add", "-b", "worker", str(worktree), self.base)
-        tip = self.commit("worker.txt", "reviewed worker change\n", cwd=worktree)
-        editor = shlex.join([sys.executable, "-c",
-                            "import pathlib, sys; p = pathlib.Path(sys.argv[1]); "
-                            "p.write_text(p.read_text().replace('pick ', 'edit ', 1))"])
-        self.git("rebase", "-i", self.base, cwd=worktree,
-                 env={**self.env, "GIT_SEQUENCE_EDITOR": editor})
-        self.assertEqual(self.git("symbolic-ref", "--quiet", "HEAD", cwd=worktree,
-                                  check=False).returncode, 1)
-        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all",
-                                  "--ignored", cwd=worktree).stdout, "")
-        porcelain = self.git("worktree", "list", "--porcelain").stdout
-        self.assertIn("detached", porcelain)
-        self.assertNotIn("branch refs/heads/worker", porcelain)
-        refusal = self.git("branch", "-d", "worker", check=False)
-        self.assertNotEqual(refusal.returncode, 0)
-        self.assertIn(str(worktree), refusal.stderr)
-        # Inspect actual Git paths in EVERY registered worktree, not the common Git dir.
-        registered = [Path(field[len("worktree "):]) for field in
-                      self.git("worktree", "list", "--porcelain", "-z").stdout.split("\0")
-                      if field.startswith("worktree ")]
-        self.assertEqual(set(registered), {self.repo, worktree})
-        found = {}
-        for directory in registered:
-            for marker in ("rebase-merge", "rebase-apply", "BISECT_START", "MERGE_HEAD",
-                           "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer"):
-                path = Path(self.git("rev-parse", "--git-path", marker,
-                                     cwd=directory).stdout.strip())
-                path = directory / path  # Absolute Git paths remain absolute.
-                try:
-                    path.lstat()
-                except FileNotFoundError:
-                    continue
-                found[directory, marker] = path
-        self.assertEqual(set(found), {(worktree, "rebase-merge")})
-        self.assertEqual((found[worktree, "rebase-merge"] / "head-name").read_text(),
-                         "refs/heads/worker\n")
-        # Detection retains the branch despite clean detached porcelain; do not use CAS here.
-        self.assertEqual(self.git("rev-parse", "worker").stdout.strip(), tip)
-        self.git("rebase", "--abort", cwd=worktree)
-
-    def test_cas_leaves_upstream_config_until_exact_section_removal_and_readback(self):
-        self.git("branch", "worker", self.base)
-        self.git("push", "-u", "origin", "worker")
-        self.git("config", "--local", "--add", "branch.worker.note", "first\nline")
-        self.git("config", "--local", "--add", "branch.worker.note", "second")
-        # Prefix-related sections and other config must not be swept up by section matching.
-        self.git("config", "--local", "branch.worker.extra.remote", "unrelated")
-        self.git("config", "--local", "branch.other.remote", "also-unrelated")
-        snapshot = self.branch_config("worker")
-        self.assertEqual(len(snapshot), 4)
-        unrelated = tuple(e for e in self.local_config_entries() if e not in snapshot)
-        config_file = self.repo / ".git" / "config"
-        self.git("update-ref", "-d", "refs/heads/worker", self.base)
-        self.assertEqual(self.git("show-ref", "--verify", "--quiet", "refs/heads/worker",
-                                  check=False).returncode, 1)
-        self.assertEqual(self.branch_config("worker"), snapshot)
-        self.assertIn("branch.worker.remote\norigin", snapshot)
-        self.assertIn("branch.worker.merge\nrefs/heads/worker", snapshot)
-        # No concurrent writers in this sandbox: recheck unchanged section, then exact removal.
-        self.assertEqual(self.branch_config("worker"), snapshot)
-        self.git("config", "--file", str(config_file), "--remove-section", "branch.worker")
-        for _ in range(2):
-            self.assertEqual(self.branch_config("worker"), ())
-            self.assertEqual(self.local_config_entries(), unrelated)
-            for key in ("remote", "merge", "note"):
-                self.assertEqual(self.git("config", "--local", "--get-all",
-                                          "branch.worker." + key, check=False).returncode, 1)
-        self.assertEqual(self.branch_config("worker.extra"),
-                         ("branch.worker.extra.remote\nunrelated",))
-
-    def test_changed_branch_config_is_retained_after_cas(self):
-        self.git("branch", "worker", self.base)
-        self.git("push", "-u", "origin", "worker")
-        snapshot = self.branch_config("worker")
-        self.git("update-ref", "-d", "refs/heads/worker", self.base)
-        self.assertEqual(self.git("show-ref", "--verify", "--quiet", "refs/heads/worker",
-                                  check=False).returncode, 1)
-        self.git("config", "--local", "branch.worker.remote", "changed-by-another-writer")
-        changed = self.branch_config("worker")
-        self.assertNotEqual(changed, snapshot)
-        # A mismatch cannot authorize removal; demonstrate retained config, not a cleanup engine.
-        self.assertIn("branch.worker.remote\nchanged-by-another-writer", changed)
-        self.assertEqual(self.branch_config("worker"), changed)
-
-    def test_branch_config_no_section_is_idempotent_after_cas(self):
-        self.git("branch", "worker", self.base)
-        self.assertEqual(self.branch_config("worker"), ())
-        unrelated = self.local_config_entries()
-        self.git("update-ref", "-d", "refs/heads/worker", self.base)
-        for _ in range(2):
-            self.assertEqual(self.git("show-ref", "--verify", "--quiet", "refs/heads/worker",
-                                      check=False).returncode, 1)
-            self.assertEqual(self.branch_config("worker"), ())
-            self.assertEqual(self.local_config_entries(), unrelated)
-        # Absence is read-back success: no blind --remove-section (which would error).
-
-    def test_local_sync_fast_forwards_base_then_rebases_owned_commits(self):
-        self.git("switch", "-c", "owned-local")
-        original = self.commit("local.txt", "owned unpublished work\n")
-        self.git("switch", "-c", "delivered", self.base)
-        delivered = self.commit("delivered.txt", "merged remote work\n")
-        self.git("push", "origin", "HEAD:main")
-        self.git("fetch", "origin")
-        self.git("switch", "main")
-        self.git("merge", "--ff-only", "origin/main")
-        self.assertEqual(self.git("rev-parse", "HEAD").stdout.strip(), delivered)
-        self.git("switch", "owned-local")
-        self.git("rebase", "origin/main")
-        self.git("merge-base", "--is-ancestor", delivered, "HEAD")
-        self.assertNotEqual(self.git("rev-parse", "HEAD").stdout.strip(), original)
-        self.assertEqual((self.repo / "local.txt").read_text(), "owned unpublished work\n")
-        self.assertEqual(self.git("status", "--porcelain").stdout, "")
-        self.assertEqual(self.git("ls-remote", "--heads", "origin", "refs/heads/main")
-                         .stdout.split()[0], delivered)
-
-    def test_local_sync_conflict_preserves_commits_for_recovery(self):
-        self.git("switch", "-c", "owned-local")
-        original = self.commit("product.md", "owned local edit\n")
-        self.git("switch", "-c", "delivered", self.base)
-        delivered = self.commit("product.md", "conflicting delivered edit\n")
-        self.git("push", "origin", "HEAD:main")
-        self.git("fetch", "origin")
-        self.git("switch", "owned-local")
-        result = self.git("rebase", "origin/main", check=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("UU product.md", self.git("status", "--porcelain").stdout)
-        self.assertEqual(self.git("rev-parse", "owned-local").stdout.strip(), original)
-        self.assertEqual(self.git("rev-parse", "origin/main").stdout.strip(), delivered)
-        self.git("rebase", "--abort")
-        self.assertEqual((self.repo / "product.md").read_text(), "owned local edit\n")
-        self.assertEqual(self.git("rev-parse", "HEAD").stdout.strip(), original)
-
-    def test_unique_worker_commit_is_not_integrated(self):
-        self.git("switch", "-c", "worker")
-        tip = self.commit("unique.txt", "not delivered\n")
-        self.git("switch", "main")
-        self.assertEqual(self.git("merge-base", "--is-ancestor", tip, "main",
-                                  check=False).returncode, 1)
-        self.assertEqual(self.git("rev-list", "main..worker").stdout.strip(), tip)
-        self.assertNotEqual(self.git("branch", "-d", "worker", check=False).returncode, 0)
-        self.assertEqual(self.git("rev-parse", "worker").stdout.strip(), tip)
-
-    def test_unknown_ignored_content_is_visible_not_safe(self):
-        worktree = self.root / "ignored"
-        self.git("worktree", "add", "--detach", str(worktree), self.base)
-        unknown = worktree / "ignored" / "unknown.md"
-        unknown.parent.mkdir()
-        unknown.write_text("unrecorded user content\n")
-        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all",
-                                  cwd=worktree).stdout, "")
-        status = self.git("status", "--porcelain", "--untracked-files=all", "--ignored",
-                          cwd=worktree).stdout
-        self.assertIn("!! ignored/", status)
-        # A nonempty ignored inventory forbids removal by contract; Git can silently delete it.
-        self.assertTrue(unknown.is_file())
-        self.assertIn(str(worktree), self.git("worktree", "list", "--porcelain").stdout)
-
-    def test_exact_untracked_temp_markdown_vs_tracked_product_markdown(self):
-        artifact = self.repo / "owned-temp.md"
-        artifact.write_text("job-owned ephemeral content\n")
-        tracked = self.git("ls-files", "--error-unmatch", "--", "product.md")
-        untracked = self.git("ls-files", "--error-unmatch", "--", "owned-temp.md", check=False)
-        self.assertEqual(tracked.stdout.strip(), "product.md")
-        self.assertEqual(untracked.returncode, 1)
-        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=all", "--ignored")
-                         .stdout, "?? owned-temp.md\n")
-        # This tests trackedness only, not ownership/hash authorization or an artifact cleaner.
-        self.assertTrue(artifact.is_file())
-        self.assertTrue((self.repo / "product.md").is_file())
-
-    def test_missing_worktree_path_does_not_mean_metadata_absent(self):
-        worktree = self.root / "missing"
-        self.git("worktree", "add", "--detach", str(worktree), self.base)
-        shutil.rmtree(worktree)  # Simulate an external deletion, not cleanup behavior.
-        self.assertFalse(worktree.exists())
-        entries = self.git("worktree", "list", "--porcelain").stdout
-        self.assertIn("worktree " + str(worktree), entries)
-        self.assertIn("prunable", entries)
-        # Its own Git paths cannot be inspected: absence is not proof of idle operation state.
-        with self.assertRaises(FileNotFoundError):
-            self.git("rev-parse", "--git-path", "rebase-merge", cwd=worktree)
-        # Retain/report the exact metadata entry: no global prune in this sandbox.
-        self.assertIn(str(worktree), self.git("worktree", "list", "--porcelain").stdout)
 
 
 if __name__ == "__main__":

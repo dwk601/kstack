@@ -1,0 +1,552 @@
+#!/usr/bin/env python3
+"""Stateless, fail-closed Git mechanics. Ownership and quiescence are caller proofs.
+
+No journals or proof files are written. Only explicitly requested Git mutations,
+configuration removal, and scratch deletion are performed.
+"""
+import argparse
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+import sys
+import time
+
+MARKERS = ("rebase-merge", "rebase-apply", "BISECT_START", "MERGE_HEAD",
+           "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer")
+
+
+class Failure(Exception):
+    pass
+
+
+class Retained(Exception):
+    pass
+
+
+def run(argv, cwd=None, timeout=60):
+    return subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
+                          errors="surrogateescape", timeout=timeout)
+
+
+def git(*args, cwd=None, check=True):
+    result = run(["git", *map(str, args)], cwd=cwd)
+    if check and result.returncode:
+        raise Failure("git: " + result.stderr.strip())
+    return result
+
+
+def oid(value):
+    if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", value):
+        raise Failure("invalid SHA")
+    return value.lower()
+
+
+def branch(value):
+    git("check-ref-format", "refs/heads/" + value)
+    if value.startswith("-"):
+        raise Failure("invalid branch")
+    return value
+
+
+def remote_name(value):
+    # A configured remote name, not an arbitrary URL or option.
+    git("check-ref-format", "refs/remotes/" + value + "/probe")
+    if value.startswith("-"):
+        raise Failure("invalid remote")
+    return value
+
+
+def ref_tip(ref):
+    result = git("for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)", ref)
+    if result.stderr:
+        raise Failure("uninspectable refs: " + result.stderr)
+    for line in result.stdout.splitlines():
+        name, sha, symbolic = line.split("\0", 2)
+        if name == ref:
+            if symbolic:
+                raise Retained("symbolic ref is not an owned direct ref: " + ref)
+            return oid(sha)
+    return None
+
+
+def ancestor(tip, base):
+    result = git("merge-base", "--is-ancestor", tip, base, check=False)
+    if result.returncode not in (0, 1):
+        raise Failure("cannot prove ancestry: " + result.stderr)
+    return result.returncode == 0
+
+
+def fetch(remote, base):
+    remote_name(remote)
+    branch(base)
+    ref = "refs/remotes/" + remote + "/" + base
+    git("fetch", "--no-tags", remote, "+refs/heads/" + base + ":" + ref)
+    if not ref_tip(ref):
+        raise Failure("fetched base missing")
+    return ref
+
+
+def worktrees():
+    records = []
+    for field in git("worktree", "list", "--porcelain", "-z").stdout.split("\0"):
+        if field.startswith("worktree "):
+            records.append({"worktree": field[9:]})
+        elif field and records:
+            key, _, value = field.partition(" ")
+            records[-1][key] = value
+    if not records:
+        raise Failure("no registered worktrees")
+    return records
+
+
+def idle(path):
+    if not Path(path).is_dir() or Path(path).is_symlink():
+        raise Retained("uninspectable worktree " + str(path))
+    for marker in MARKERS:
+        resolved = Path(git("rev-parse", "--git-path", marker, cwd=path).stdout.strip())
+        resolved = Path(path) / resolved
+        try:
+            resolved.lstat()
+        except FileNotFoundError:
+            continue
+        raise Retained("operation marker " + str(resolved))
+
+
+def clean(path=None):
+    return not git("status", "--porcelain", "--untracked-files=all", "--ignored",
+                   cwd=path).stdout
+
+
+def delete_remote_branch(args):
+    branch(args.branch)
+    if not args.remote or args.remote.startswith("-"):
+        raise Failure("invalid remote")
+    expected = oid(args.expect)
+    ref = "refs/heads/" + args.branch
+
+    def read():
+        lines = git("ls-remote", "--heads", args.remote, ref).stdout.splitlines()
+        pairs = [line.split() for line in lines]
+        if any(len(p) != 2 or p[1] != ref for p in pairs) or len(pairs) > 1:
+            raise Failure("ambiguous remote ref")
+        return oid(pairs[0][0]) if pairs else None
+
+    tip = read()
+    if tip is None:
+        return "absent", "remote-ref"
+    if tip != expected:
+        raise Retained("remote tip changed")
+    # Even a failed push is followed by a successful absence proof, never a retry.
+    git("push", "--force-with-lease=" + ref + ":" + expected,
+        args.remote, ":" + ref, check=False)
+    if read() is not None:
+        raise Retained("remote ref remains after leased delete")
+    return "done", "remote-ref"
+
+
+def remove_worktree(args):
+    path = os.path.abspath(args.path)
+    entries = worktrees()
+    entry = next((e for e in entries if e["worktree"] == path), None)
+    if entry is None:
+        if os.path.lexists(path):
+            raise Retained("path is not a registered worktree")
+        return "absent", "path-and-metadata"
+    if entry is entries[0]:
+        raise Retained("main worktree")
+    if "locked" in entry:
+        raise Retained("locked worktree")
+    if not os.path.lexists(path):
+        raise Retained("missing path with worktree metadata; no prune")
+    idle(path)
+    if not clean(path):
+        raise Retained("dirty or ignored worktree content")
+    if args.expect_head and git("rev-parse", "HEAD", cwd=path).stdout.strip() != oid(args.expect_head):
+        raise Retained("worktree HEAD changed")
+    result = git("worktree", "remove", path, check=False)
+    remaining = any(e["worktree"] == path for e in worktrees())
+    if os.path.lexists(path) or remaining:
+        raise Retained("worktree removal refused: " + result.stderr.strip())
+    return "done", "path-and-metadata"
+
+
+def config_snapshot(name):
+    branch(name)
+    raw = git("config", "--show-origin", "--show-scope", "--null", "--list",
+              "--no-includes").stdout
+    fields = raw.split("\0")
+    if fields[-1] != "" or (len(fields) - 1) % 3:
+        raise Failure("unrecognized config output")
+    entries = []
+    for i in range(0, len(fields) - 1, 3):
+        scope, origin, entry = fields[i:i + 3]
+        if origin.startswith("file:"):
+            origin = "file:" + os.path.abspath(origin[5:])
+        if entry.partition("\n")[0].rpartition(".")[0] == "branch." + name:
+            entries.append((scope, origin, entry))
+    payload = json.dumps(["branch-config-v1", entries], ensure_ascii=True,
+                         separators=(",", ":")).encode()
+    return hashlib.sha256(payload).hexdigest(), entries
+
+
+def snapshot_branch_config(args):
+    return "done", config_snapshot(args.branch)[0]
+
+
+def gh_view(number, fields, timeout=60):
+    result = run(["gh", "pr", "view", str(number), "--json", fields], timeout=timeout)
+    if result.returncode:
+        raise Failure("gh: " + result.stderr.strip())
+    value = json.loads(result.stdout)
+    if not isinstance(value, dict):
+        raise Failure("invalid PR response")
+    return value
+
+
+def delete_local_branch(args):
+    branch(args.branch)
+    expected = oid(args.expect)
+    ref = "refs/heads/" + args.branch
+    tip = ref_tip(ref)
+    if tip is None:
+        return "absent", "local-ref; config untouched (no CAS proof)"
+    if tip != expected:
+        raise Retained("local tip changed")
+    remote, separator, base = args.base.partition("/")
+    if not separator:
+        raise Failure("base must be REMOTE/BASE")
+    base_ref = fetch(remote, base)
+    if not ancestor(expected, base_ref):
+        if not args.pr:
+            raise Retained("unique unmerged commits")
+        pr = gh_view(args.pr, "state,headRefOid,mergeCommit")
+        merge = (pr.get("mergeCommit") or {}).get("oid", "")
+        if (pr.get("state") != "MERGED" or pr.get("headRefOid") != expected
+                or not merge or not ancestor(oid(merge), base_ref)):
+            raise Retained("PR merge mapping unproven")
+    for entry in worktrees():
+        if entry.get("branch") == ref:
+            raise Retained("branch associated with worktree")
+        idle(entry["worktree"])
+    result = git("update-ref", "-d", ref, expected, check=False)
+    if result.returncode:
+        raise Retained("CAS rejected; config untouched: " + result.stderr.strip())
+    if ref_tip(ref) is not None:
+        raise Retained("local ref remains; config untouched")
+    digest, entries = config_snapshot(args.branch)
+    if not entries:
+        return "done", "local-ref deleted; config absent"
+    if digest != args.config_digest:
+        raise Retained("local-ref deleted; config digest missing/changed")
+    owners = {(scope, origin) for scope, origin, _ in entries}
+    if len(owners) != 1 or next(iter(owners))[0] != "local":
+        raise Retained("local-ref deleted; config not in one local file")
+    origin = next(iter(owners))[1]
+    if not origin.startswith("file:"):
+        raise Retained("local-ref deleted; config origin is not a file")
+    git("config", "--file", origin[5:], "--remove-section", "branch." + args.branch)
+    if config_snapshot(args.branch)[1]:
+        raise Retained("local-ref deleted; config section remains")
+    return "done", "local-ref and exact config section deleted"
+
+
+def user_allows_merge():
+    path = os.environ.get("KSTACK_CONFIG")
+    if path:
+        path = Path(path).expanduser()
+    else:
+        path = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "kstack/config.json"
+    try:
+        value = json.loads(path.read_text())
+    except FileNotFoundError:
+        return False
+    return (isinstance(value, dict) and isinstance(value.get("finish"), dict)
+            and value["finish"].get("allow_merge") is True)
+
+
+def merge_pr(args):
+    if not args.user_consented and not user_allows_merge():
+        raise Failure("merge permission required (user decision)")
+    expected = oid(args.match_head)
+    deadline = time.monotonic() + args.timeout_seconds
+
+    def remaining():
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise Failure("pending/timeout awaiting API-confirmed merge")
+        return left
+
+    fields = "state,headRefOid,mergeCommit,baseRefName"
+    pr = gh_view(args.pr, fields, remaining())
+    if pr.get("state") != "OPEN" or pr.get("headRefOid") != expected:
+        raise Failure("PR not OPEN at matched head")
+    base = pr.get("baseRefName")
+    if not isinstance(base, str):
+        raise Failure("PR base missing")
+    branch(base)
+    result = run(["gh", "pr", "merge", str(args.pr), "--" + args.method,
+                  "--match-head-commit", expected], timeout=remaining())
+    if result.returncode:
+        raise Failure("merge refused: " + result.stderr.strip())
+    delay = 0.1
+    while True:
+        pr = gh_view(args.pr, fields, remaining())
+        if pr.get("headRefOid") != expected or pr.get("baseRefName") != base:
+            raise Failure("PR head/base changed")
+        if pr.get("state") == "MERGED":
+            break
+        if pr.get("state") != "OPEN":
+            raise Failure("PR closed without merge")
+        time.sleep(min(delay, remaining()))
+        delay = min(delay * 2, 5)
+    merge = oid((pr.get("mergeCommit") or {}).get("oid", ""))
+    print("merge " + merge)
+    base_ref = fetch(args.remote, base)
+    if not ancestor(merge, base_ref):
+        raise Failure("merge SHA not on fetched base")
+    if args.method == "merge" and not ancestor(expected, base_ref):
+        raise Failure("verified head not on fetched base")
+    return "done", merge
+
+
+def no_symlinks(path):
+    # Inspect lexical components BEFORE abspath collapses '..'.
+    raw = Path(path)
+    current = Path(raw.anchor) if raw.is_absolute() else Path.cwd()
+    for part in raw.parts:
+        if part == raw.anchor:
+            continue
+        current = current / part
+        try:
+            mode = current.lstat().st_mode
+        except FileNotFoundError:
+            if ".." in raw.parts:
+                raise Retained("missing component or ancestor escape")
+            continue
+        if stat.S_ISLNK(mode):
+            raise Retained("symlink component " + str(current))
+    path = Path(os.path.abspath(path))
+    for component in [*reversed(path.parents), path]:
+        try:
+            mode = component.lstat().st_mode
+        except FileNotFoundError:
+            return path
+        if stat.S_ISLNK(mode):
+            raise Retained("symlink component " + str(component))
+    return path
+
+
+def scratch_snapshot(path):
+    path = no_symlinks(path)
+    records = []
+    files = []
+
+    def visit(item):
+        info = item.lstat()
+        name = str(item.relative_to(path))
+        if stat.S_ISDIR(info.st_mode):
+            records.append((name, "directory"))
+            for child in sorted(item.iterdir()):
+                visit(child)
+        elif stat.S_ISREG(info.st_mode):
+            # Do not follow a file swapped to a symlink during inspection.
+            fd = os.open(item, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            with os.fdopen(fd, "rb") as stream:
+                current = os.fstat(stream.fileno())
+                if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
+                    raise Retained("scratch changed during inspection")
+                digest = hashlib.sha256()
+                for block in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(block)
+            records.append((name, "file", digest.hexdigest()))
+            files.append(item)
+        else:
+            raise Retained("symlink or special scratch entry " + str(item))
+
+    visit(path)
+    digest = hashlib.sha256(json.dumps(records, ensure_ascii=True,
+                                       separators=(",", ":")).encode()).hexdigest()
+    return digest, records, files
+
+
+def scratch_digest(args):
+    path = no_symlinks(args.path)
+    if not os.path.lexists(path):
+        return "absent", "scratch-path"
+    return "done", scratch_snapshot(path)[0]
+
+
+def require_untracked(path):
+    result = git("rev-parse", "--show-toplevel", cwd=path.parent, check=False)
+    if result.returncode:
+        outside = "fatal: not a git repository (or any of the parent directories): .git"
+        # A broken gitdir, a discovery ceiling, or routing errors are NOT proof
+        # that a file is outside Git. Inspect possible repository boundaries too.
+        boundaries = (path.parent, *path.parent.parents)
+        if (result.returncode == 128 and result.stderr.strip() == outside
+                and not any(os.path.lexists(parent / ".git") for parent in boundaries)
+                and not any(os.environ.get(key) for key in ("GIT_DIR", "GIT_WORK_TREE"))):
+            return
+        raise Failure("cannot inspect scratch repository: " + result.stderr)
+    top = Path(result.stdout.strip())
+    relative = str(path.relative_to(top))
+    result = git("--literal-pathspecs", "ls-files", "--error-unmatch", "--", relative,
+                 cwd=top, check=False)
+    if result.returncode == 0:
+        raise Retained("tracked scratch file " + relative)
+    if result.returncode != 1 or "did not match any file(s) known to git" not in result.stderr:
+        raise Failure("cannot prove untracked scratch: " + result.stderr)
+
+
+def delete_scratch(args):
+    path, root = no_symlinks(args.path), no_symlinks(args.root)
+    if path == root or root not in path.parents:
+        raise Retained("scratch path not strictly contained in owned root")
+    if not os.path.lexists(path):
+        return "absent", "scratch-path"
+    digest, records, files = scratch_snapshot(path)
+    if digest != args.expect:
+        raise Retained("scratch digest changed")
+    for item in files:
+        require_untracked(item)
+    # Recheck the entire entry set and hashes after Git inspection, before unlink.
+    if scratch_snapshot(path)[0] != args.expect:
+        raise Retained("scratch changed before unlink")
+    for record in reversed(records):
+        item = path / record[0]
+        if record[1] == "directory":
+            item.rmdir()
+        else:
+            item.unlink()
+    if os.path.lexists(path):
+        raise Retained("scratch path remains")
+    return "done", "scratch-path"
+
+
+def checkout_state():
+    current = git("symbolic-ref", "--quiet", "--short", "HEAD", check=False)
+    if current.returncode not in (0, 1):
+        raise Failure("cannot inspect checkout branch")
+    name = current.stdout.strip()
+    head = oid(git("rev-parse", "HEAD").stdout.strip())
+    upstream = git("for-each-ref", "--format=%(upstream)", "refs/heads/" + name).stdout.strip() if name else ""
+    status = git("status", "--porcelain", "--untracked-files=all", "--ignored").stdout
+    return name, head, upstream, status
+
+
+def sync_local(args):
+    base_ref = fetch(args.remote, args.base)
+    current, head, upstream, status = checkout_state()
+    try:
+        entries = worktrees()
+        for entry in entries:
+            idle(entry["worktree"])
+        if status:
+            raise Retained("dirty checkout")
+        if current != args.base and (current != args.owned_branch or not args.owned_expect):
+            raise Retained("unowned or detached checkout")
+        if current != args.base and head != oid(args.owned_expect):
+            raise Retained("owned branch tip changed")
+        local_ref = "refs/heads/" + branch(args.base)
+        old = ref_tip(local_ref)
+        if old is None or not ancestor(old, base_ref):
+            raise Retained("local base missing/divergent")
+        if current == args.base:
+            git("merge", "--ff-only", base_ref)
+        else:
+            if any(e.get("branch") == local_ref for e in entries):
+                raise Retained("base checked out in another worktree")
+            git("update-ref", local_ref, ref_tip(base_ref), old)
+            result = git("rebase", base_ref, check=False)
+            if result.returncode:
+                git("rebase", "--abort")
+                if checkout_state()[1] != head:
+                    raise Failure("rebase abort did not restore original HEAD")
+                raise Retained("rebase conflict; aborted, commits preserved")
+        after = checkout_state()
+        if after[0] != current or after[2] != upstream or after[3] or not ancestor(base_ref, after[1]):
+            raise Retained("sync readback mismatch")
+        return "done", after[1]
+    finally:
+        name, sha, tracking, dirty = checkout_state()
+        print("checkout " + json.dumps(dict(branch=name, HEAD=sha, upstream=tracking, status=dirty)))
+
+
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        raise Failure(message)
+
+
+def positive_int(value):
+    number = int(value)
+    if number <= 0:
+        raise argparse.ArgumentTypeError("must be positive")
+    return number
+
+
+def positive_seconds(value):
+    number = float(value)
+    if not math.isfinite(number) or number <= 0:
+        raise argparse.ArgumentTypeError("must be positive finite seconds")
+    return number
+
+
+def build_parser():
+    parser = Parser(prog="kstack-git", description=__doc__)
+    commands = parser.add_subparsers(dest="cmd", required=True)
+    specifications = {
+        "delete-remote-branch": (delete_remote_branch, ("remote", "branch", "expect"), ()),
+        "remove-worktree": (remove_worktree, ("path",), ("expect-head",)),
+        "snapshot-branch-config": (snapshot_branch_config, ("branch",), ()),
+        "delete-local-branch": (delete_local_branch, ("branch", "expect", "base"), ("config-digest",)),
+        "merge-pr": (merge_pr, ("pr", "match-head"), ()),
+        "scratch-digest": (scratch_digest, ("path",), ()),
+        "delete-scratch": (delete_scratch, ("path", "expect", "root"), ()),
+        "sync-local": (sync_local, ("base",), ("owned-branch", "owned-expect")),
+    }
+    for name, (function, required, optional) in specifications.items():
+        sub = commands.add_parser(name)
+        sub.set_defaults(function=function)
+        for flag in required + optional:
+            sub.add_argument("--" + flag, required=flag in required,
+                             type=positive_int if flag == "pr" else str)
+        if name == "delete-local-branch":
+            sub.add_argument("--pr", type=positive_int)
+        if name in ("merge-pr", "sync-local"):
+            sub.add_argument("--remote", default="origin")
+        if name == "merge-pr":
+            sub.add_argument("--method", choices=("merge", "squash", "rebase"), required=True)
+            sub.add_argument("--timeout-seconds", type=positive_seconds, default=600)
+            sub.add_argument("--user-consented", action="store_true")
+    return parser
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    cmd = argv[0] if argv else "unknown"
+    cmd = " ".join(cmd.split())
+    try:
+        args = build_parser().parse_args(argv)
+        cmd = args.cmd
+        outcome, reason = args.function(args)
+    except SystemExit as exc:
+        outcome, reason = ("done", "help") if exc.code == 0 else ("error", "arguments")
+    except Retained as exc:
+        outcome, reason = "retained", str(exc)
+    except KeyboardInterrupt:
+        outcome, reason = "error", "interrupted; inspect state before resuming"
+    except subprocess.TimeoutExpired:
+        outcome, reason = "error", "pending/timeout executing command"
+    except (Failure, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        outcome, reason = "error", str(exc)
+    print("kstack-git %s %s %s" % (cmd, outcome, " ".join(reason.split())))
+    return {"done": 0, "absent": 0, "retained": 3, "error": 2}[outcome]
+
+
+if __name__ == "__main__":
+    sys.exit(main())
