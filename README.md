@@ -41,7 +41,7 @@ Diagnosis/explanation are read-only. Changes use kstack-plan → kstack-execute;
 
 ## Configuration and safety
 
-See [kstack-setup](skills/kstack-setup/SKILL.md) and its [config example](skills/kstack-setup/references/config.example.json). Built-in CLIs: Pi, Codex, Claude Code; custom presets supply argv templates. Model choices and permissions remain user-owned.
+See [kstack-setup](skills/kstack-setup/SKILL.md), its [config example](skills/kstack-setup/references/config.example.json) and [verification harness](skills/kstack-setup/references/verify-harness.md). Harnesses map user-facing features; verification drives every mapped feature by default. Built-in CLIs: Pi, Codex, Claude Code; custom presets supply argv templates. Model choices and permissions remain user-owned.
 
 ```sh
 python3 skills/kstack-setup/scripts/kstack-models show
@@ -50,7 +50,7 @@ python3 skills/kstack-setup/scripts/kstack-models validate --check
 
 kstack-finish defaults to `complete`: verified merge, postmerge gates and delivery of every affected app. Permissions, real recipes and evidence are required; missing requirements block. `finish.deploy_checks` verifies delivery but is not an apply recipe.
 
-Results/inventory stay in chat/stdout, not saved run artifacts. Every settled return cleans safe owned temporary resources. Source cleanup waits for merge and target gates; unmerged/unrelated/uncertain work is preserved. [Cleanup safeguards](skills/kstack-finish/references/cleanup.md) pair ownership judgment with the tested, stateless `kstack-git` script for Git, scratch and sync mechanics. Partial cleanup is not overall completion.
+Results/inventory stay in chat/stdout, not saved run artifacts. Temporary proof captures follow the [shared exception](skills/kstack/SKILL.md#no-saved-run-artifacts). Every settled return cleans safe owned temporary resources. Source cleanup waits for merge and target gates; unmerged/unrelated/uncertain work is preserved. [Cleanup safeguards](skills/kstack-finish/references/cleanup.md) pair ownership judgment with the tested, stateless `kstack-git` script for Git, scratch and sync mechanics. Partial cleanup is not overall completion.
 
 ## Optional CI efficiency work
 

@@ -14,7 +14,7 @@ Use a fresh configured reviewer, not the implementer.
 - **Task:** pin base/head; judge one task's diff against acceptance; run task checks/lint.
 - **Audit:** at frozen head, judge what task reviews cannot: cross-task interactions, integration edits, unreviewed changes, request scope/regressions. Validate gate evidence; probe, don't rerun suites.
 
-Trace callers, data/wire formats, flags, dependencies, config/shared state beyond the diff. Prove safety assumptions with code/runtime evidence; cite applicable repo rules; check correctness, edges, root cause, complexity.
+Trace callers, data/wire formats, flags, dependencies, config/shared state beyond the diff. Prove safety assumptions with code/runtime evidence; cite repo rules; check correctness, edges, root cause, complexity. With a feature map, a user-visible change without a matching map update is FAIL.
 
 For all four, FAIL only when new in the diff: workaround-justifying comments, quick-fix timers/sleeps, lint/type suppressions, deprecated-pattern copies. Give root-cause fixes. Inline reason/expiry date/named human approval exempt these. Machine-checkable FAILs: kstack-improve candidates.
 

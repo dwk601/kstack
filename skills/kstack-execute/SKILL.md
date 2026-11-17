@@ -36,7 +36,7 @@ At frozen head: `git worktree add --detach <path> <sha>`; `python3 "$MODELS" cmd
 |---|---|
 | Audit | kstack-review |
 | Gates | Full checks/lint/typecheck; coordinator may run |
-| Live | kstack-verify changed user-visible behavior; compare a main scenario to base |
+| Live | kstack-verify every mapped feature plus changed behavior; compare a main scenario to base |
 | Perf | kstack-perf speed targets without edits |
 | Formal | Default: repo-framework property-based tests; TLA+/Lean only with existing tooling. Show each property fail on a deliberately broken variant (mutation) only in verifier's disposable worktree; revert before `../kstack-finish/scripts/kstack-git` remove-worktree, leaving source unchanged. Never weaken properties; counterexamples are findings. N/A with reason if no plan flags. |
 
