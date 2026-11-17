@@ -97,6 +97,14 @@ def canonical(path):
     return Path(os.path.realpath(path))
 
 
+def entry_path(path):
+    """Resolve ancestor aliases, but never dereference the named entry."""
+    raw = Path(path)
+    if raw.name in ("", ".."):
+        return canonical(raw)
+    return canonical(raw.parent) / raw.name
+
+
 def path_exists(path):
     try:
         os.lstat(path)
@@ -109,7 +117,7 @@ def worktrees():
     records = []
     for field in git("worktree", "list", "--porcelain", "-z").stdout.split("\0"):
         if field.startswith("worktree "):
-            records.append({"worktree": str(canonical(field[9:]))})
+            records.append({"worktree": str(entry_path(field[9:]))})
         elif field and records:
             key, _, value = field.partition(" ")
             records[-1][key] = value
@@ -165,7 +173,7 @@ def delete_remote_branch(args):
 
 def remove_worktree(args):
     expected = oid(args.expect_head) if args.expect_head is not None else None
-    path = str(canonical(args.path))
+    path = str(entry_path(args.path))
     entries = worktrees()
     entry = next((e for e in entries if e["worktree"] == path), None)
     if entry is None:
@@ -192,7 +200,9 @@ def remove_worktree(args):
 
 def config_snapshot(name):
     branch(name)
-    top = canonical(git("rev-parse", "--show-toplevel").stdout.rstrip("\n"))
+    bare = git("rev-parse", "--is-bare-repository").stdout.strip() == "true"
+    top = canonical(git("rev-parse", "--absolute-git-dir" if bare else "--show-toplevel")
+                    .stdout.rstrip("\n"))
     raw = git("config", "--show-origin", "--show-scope", "--null", "--list",
               "--includes", cwd=top).stdout
     fields = raw.split("\0")
@@ -339,8 +349,7 @@ def scratch_entry(path):
         raise Retained("ancestor escape in scratch path")
     # External aliases (notably macOS /var -> /private/var) are canonicalized.
     # Preserve the leaf so a scratch symlink is inspected, never followed.
-    absolute = Path(os.path.abspath(raw))
-    return canonical(absolute.parent) / absolute.name
+    return entry_path(raw)
 
 
 def scratch_relative(path, root):
@@ -465,52 +474,49 @@ def require_untracked(path):
 
 
 def unlink_snapshot(parent, name, records, identities):
-    # All destructive calls are relative to pinned, no-follow directory fds.
-    # A path/ancestor swap can never redirect unlink into a different tree.
-    with contextlib.ExitStack() as stack:
-        directories = {}
+    # Post-order deletion of ONLY inventoried entries. Scoped no-follow fds
+    # pin ancestors against swaps and use O(depth), not O(directory count), fds.
+    entries = {record[0]: record for record in records}
+    children = {}
+    for relative in entries:
+        if relative != ".":
+            children.setdefault(str(Path(relative).parent), []).append(relative)
 
-        def entry(relative):
-            if relative == ".":
-                return parent, name
-            parts = Path(relative).parts
-            if "." not in directories:
-                fd = open_relative(parent, (name,))
-                stack.callback(os.close, fd)
-                if identity(os.fstat(fd)) != identities["."]:
+    def unchanged(fd, leaf, relative):
+        info = os.stat(leaf, dir_fd=fd, follow_symlinks=False)
+        if identity(info) != identities[relative]:
+            raise Retained("scratch entry changed before unlink")
+
+    def remove(fd, leaf, relative):
+        unchanged(fd, leaf, relative)
+        record = entries[relative]
+        if record[1] == "directory":
+            child = open_relative(fd, (leaf,))
+            try:
+                if identity(os.fstat(child)) != identities[relative]:
                     raise Retained("scratch directory changed before unlink")
-                directories["."] = fd
-            fd = directories["."]
-            prefix = Path(".")
-            for part in parts[:-1]:
-                prefix /= part
-                key = str(prefix)
-                if key not in directories:
-                    child = open_relative(fd, (part,))
-                    stack.callback(os.close, child)
-                    if identity(os.fstat(child)) != identities[key]:
-                        raise Retained("scratch directory changed before unlink")
-                    directories[key] = child
-                fd = directories[key]
-            return fd, parts[-1]
+                for item in children.get(relative, ()):
+                    remove(child, Path(item).name, item)
+            finally:
+                os.close(child)
+            unchanged(fd, leaf, relative)
+            os.rmdir(leaf, dir_fd=fd)
+        else:
+            if file_hash(fd, leaf, identities[relative]) != record[2]:
+                raise Retained("scratch hash changed before unlink")
+            os.unlink(leaf, dir_fd=fd)
 
-        if identity(os.stat(name, dir_fd=parent, follow_symlinks=False)) != identities["."]:
-            raise Retained("scratch changed before unlink")
-        for record in reversed(records):
-            fd, leaf = entry(record[0])
-            info = os.stat(leaf, dir_fd=fd, follow_symlinks=False)
-            if identity(info) != identities[record[0]]:
-                raise Retained("scratch entry changed before unlink")
-            if record[1] == "directory":
-                os.rmdir(leaf, dir_fd=fd)
-            else:
-                if file_hash(fd, leaf, identities[record[0]]) != record[2]:
-                    raise Retained("scratch hash changed before unlink")
-                os.unlink(leaf, dir_fd=fd)
+    remove(parent, name, ".")
 
 
 def delete_scratch(args):
-    root = canonical(args.root)
+    root = scratch_entry(args.root)
+    try:
+        root_info = root.lstat()
+    except FileNotFoundError:
+        root_info = None
+    if root_info is not None and stat.S_ISLNK(root_info.st_mode):
+        raise Retained("symlink owned root")
     relative = scratch_relative(args.path, root)
     path = root / relative
     with contextlib.ExitStack() as stack:
@@ -601,6 +607,12 @@ class Parser(argparse.ArgumentParser):
         raise Failure(message)
 
 
+def nonempty_path(value):
+    if not value:
+        raise argparse.ArgumentTypeError("empty path/root is not allowed")
+    return value
+
+
 def positive_int(value):
     number = int(value)
     if number <= 0:
@@ -632,8 +644,8 @@ def build_parser():
         sub = commands.add_parser(name)
         sub.set_defaults(function=function)
         for flag in required + optional:
-            sub.add_argument("--" + flag, required=flag in required,
-                             type=positive_int if flag == "pr" else str)
+            kind = {"pr": positive_int, "path": nonempty_path, "root": nonempty_path}.get(flag, str)
+            sub.add_argument("--" + flag, required=flag in required, type=kind)
         if name == "delete-local-branch":
             sub.add_argument("--pr", type=positive_int)
         if name in ("merge-pr", "sync-local"):

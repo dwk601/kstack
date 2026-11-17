@@ -14,6 +14,11 @@ import tempfile
 import unittest
 from unittest import mock
 
+try:
+    import resource
+except ImportError:
+    resource = None
+
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "skills/kstack-finish/scripts/kstack-git"
@@ -80,10 +85,16 @@ class GitScriptTests(unittest.TestCase):
     def tip(self, ref="HEAD", cwd=None):
         return self.git("rev-parse", ref, cwd=cwd).stdout.strip()
 
-    def cli(self, cmd, *args, outcome="done", contains=None, cwd=None):
+    def cli(self, cmd, *args, outcome="done", contains=None, cwd=None, fd_limit=None):
+        def limit_descriptors():
+            _, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+            limit = fd_limit if hard == resource.RLIM_INFINITY else min(fd_limit, hard)
+            resource.setrlimit(resource.RLIMIT_NOFILE, (limit, hard))
+
         result = subprocess.run([sys.executable, "-B", str(SCRIPT), cmd, *map(str, args)],
                                 cwd=cwd or self.repo, env=self.env, capture_output=True,
-                                text=True, timeout=20)
+                                text=True, timeout=90 if fd_limit else 20,
+                                preexec_fn=limit_descriptors if fd_limit else None)
         self.assertEqual(result.returncode, {"done": 0, "absent": 0, "retained": 3, "error": 2}[outcome],
                          result.stdout + result.stderr)
         self.last_stdout = result.stdout
@@ -363,6 +374,22 @@ class GitScriptTests(unittest.TestCase):
         self.assert_absent_ref()
         self.assertEqual(self.branch_config("worker"), ())
 
+    def test_config_snapshot_in_bare_repo_and_its_linked_worktree(self):
+        absent = self.cli("snapshot-branch-config", "--branch", "worker", cwd=self.remote)
+        for value in ("first\nline", "second"):
+            self.git("config", "--add", "branch.worker.note", value, cwd=self.remote)
+        self.git("config", "branch.worker.extra.note", "prefix sibling", cwd=self.remote)
+        before = (self.remote / "config").read_bytes()
+        digest = self.cli("snapshot-branch-config", "--branch", "worker", cwd=self.remote)
+        self.assertRegex(digest, r"^[a-f0-9]{64}$")
+        self.assertNotEqual(digest, absent)
+        self.assertEqual(self.cli("snapshot-branch-config", "--branch", "worker",
+                                  cwd=self.remote / "objects"), digest)
+        linked = self.root / "bare-linked"
+        self.git("worktree", "add", "--detach", str(linked), self.base, cwd=self.remote)
+        self.assertEqual(self.cli("snapshot-branch-config", "--branch", "worker", cwd=linked), digest)
+        self.assertEqual((self.remote / "config").read_bytes(), before)
+
     def test_post_cas_ref_readback_precedes_config_deletion(self):
         self.git("branch", "worker")
         self.git("config", "branch.worker.note", "retain until absence proven")
@@ -578,9 +605,12 @@ class GitScriptTests(unittest.TestCase):
         (scratch / "extra").unlink()
         link = owned / "link"
         link.symlink_to(scratch, target_is_directory=True)
-        for path in (link, link / "fixture", scratch / "../link/fixture", link / "../scratch"):
+        for path, expected in ((link, digest), (link / "fixture", self.scratch_digest(file))):
+            self.cli("delete-scratch", "--path", path, "--root", owned, "--expect", expected,
+                     outcome="retained", contains="symlink")
+        for path in (scratch / "../link/fixture", link / "../scratch"):
             self.cli("delete-scratch", "--path", path, "--root", owned, "--expect", digest,
-                     outcome="retained")
+                     outcome="retained", contains="ancestor escape")
         self.cli("scratch-digest", "--path", link, outcome="retained", contains="symlink")
         # Digest has no owned-root argument: canonical ancestor aliases are OK,
         # but deletion above never follows a symlink beneath its owned root.
@@ -595,6 +625,53 @@ class GitScriptTests(unittest.TestCase):
         self.cli("delete-scratch", "--path", scratch, "--root", owned, "--expect", digest, outcome="absent")
         self.assertFalse(scratch.exists())
         self.assertTrue((self.repo / "product.md").exists())
+
+    def test_symlink_owned_root_leaf_is_not_followed(self):
+        victim = self.root / "victim"
+        file = victim / "dir/fixture"
+        file.parent.mkdir(parents=True)
+        file.write_text("unrelated user data")
+        link = self.root / "rootlink"
+        link.symlink_to(victim, target_is_directory=True)
+        digest = self.scratch_digest(file)
+        for root in (str(link), str(link) + "/"):
+            self.cli("delete-scratch", "--path", link / "dir/fixture", "--root", root,
+                     "--expect", digest, outcome="retained", contains="symlink owned root")
+            self.assertEqual(file.read_text(), "unrelated user data")
+        link.unlink()
+        link.symlink_to(self.root / "missing", target_is_directory=True)
+        self.cli("delete-scratch", "--path", link / "dir/fixture", "--root", link,
+                 "--expect", digest, outcome="retained", contains="symlink owned root")
+
+    def test_directory_nofollow_blocks_escape_with_the_file_own_digest(self):
+        owned = self.root / "owned"
+        owned.mkdir()
+        victim = self.root / "victim"
+        victim.mkdir()
+        file = victim / "fixture"
+        file.write_text("unrelated user data")
+        (owned / "link").symlink_to(victim, target_is_directory=True)
+        self.cli("delete-scratch", "--path", owned / "link/fixture", "--root", owned,
+                 "--expect", self.scratch_digest(file), outcome="retained",
+                 contains="symlink or changed directory component")
+        self.assertEqual(file.read_text(), "unrelated user data")
+
+    def test_git_routing_and_error_message_guards_outside_any_repo(self):
+        owned = self.root / "owned"
+        owned.mkdir()
+        file = owned / "fixture"
+        file.write_text("owned, but Git errors do not authorize deletion")
+        digest = self.scratch_digest(file)
+        for key, value in (("GIT_DIR", str(self.root / "missing.git")),
+                           ("GIT_DIR", ""),
+                           ("GIT_WORK_TREE", str(self.root / "missing-worktree"))):
+            with self.subTest(key=key, value=value):
+                self.env.pop("GIT_DIR", None)
+                self.env.pop("GIT_WORK_TREE", None)
+                self.env[key] = value
+                self.cli("delete-scratch", "--path", file, "--root", owned, "--expect", digest,
+                         outcome="error", contains="cannot inspect scratch repository")
+                self.assertTrue(file.is_file())
 
     def test_scratch_recheck_after_git_inspection(self):
         artifact = self.repo / "owned-temp"
@@ -669,6 +746,22 @@ class GitScriptTests(unittest.TestCase):
         self.assertFalse(scratch.exists())
         self.assertTrue((owned / "nested").is_dir())
 
+    @unittest.skipUnless(resource is not None, "requires POSIX descriptor limits")
+    def test_wide_scratch_tree_under_256_fd_limit_is_complete_and_idempotent(self):
+        owned = self.root / "owned"
+        scratch = owned / "scratch"
+        scratch.mkdir(parents=True)
+        for index in range(400):
+            directory = scratch / ("d%03d" % index)
+            directory.mkdir()
+            (directory / "fixture").write_text("owned fixture %d" % index)
+        digest = self.scratch_digest(scratch)
+        for outcome in ("done", "absent"):
+            self.cli("delete-scratch", "--path", scratch, "--root", owned, "--expect", digest,
+                     fd_limit=256, outcome=outcome)
+            self.assertFalse(scratch.exists())
+            self.assertEqual(list(owned.iterdir()), [])
+
     def path_aliases(self):
         alias = self.root / "alias"
         alias.symlink_to(self.root, target_is_directory=True)
@@ -724,6 +817,50 @@ class GitScriptTests(unittest.TestCase):
         finally:
             parent.chmod(0o700)
         self.assertTrue(path.is_dir())
+
+    def test_worktree_symlink_leaf_cannot_remove_another_worktree(self):
+        first, second = self.detached("wtA"), self.detached("wtB")
+        outside = self.root / "outside/child"
+        outside.mkdir(parents=True)
+        ancestor = self.root / "ancestor"
+        ancestor.symlink_to(outside, target_is_directory=True)
+        # Resolve the parent before '..', rather than lexically collapsing it
+        # onto the unrelated registered wtB in self.root.
+        self.cli("remove-worktree", "--path", ancestor / "../wtB", outcome="absent")
+        self.assertTrue(second.is_dir())
+        alias = self.root / "link"
+        alias.symlink_to(second, target_is_directory=True)
+        self.cli("remove-worktree", "--path", alias, outcome="retained", contains="not a registered")
+        self.assertTrue(second.is_dir())
+        self.assertTrue(alias.is_symlink())
+        shutil.rmtree(first)
+        first.symlink_to(second, target_is_directory=True)
+        self.cli("remove-worktree", "--path", first, outcome="retained", contains="uninspectable")
+        self.assertTrue(first.is_symlink())
+        self.assertTrue((second / "product.md").is_file())
+        entries = self.git("worktree", "list", "--porcelain").stdout
+        self.assertIn("worktree " + str(first) + "\n", entries)
+        self.assertIn("worktree " + str(second) + "\n", entries)
+
+    def test_empty_path_and_root_are_errors_before_any_mutation(self):
+        worktree = self.detached()
+        self.cli("remove-worktree", "--path", "", "--expect-head", self.base,
+                 cwd=worktree, outcome="error", contains="empty")
+        self.assertTrue((worktree / "product.md").is_file())
+        self.assertIn(str(worktree), self.git("worktree", "list", "--porcelain").stdout)
+        owned = self.root / "owned"
+        scratch = owned / "scratch"
+        scratch.mkdir(parents=True)
+        file = scratch / "fixture"
+        file.write_text("owned fixture")
+        directory_digest, file_digest = self.scratch_digest(scratch), self.scratch_digest(file)
+        self.cli("scratch-digest", "--path", "", cwd=scratch, outcome="error", contains="empty")
+        self.cli("delete-scratch", "--path", "", "--root", owned, "--expect", directory_digest,
+                 cwd=scratch, outcome="error", contains="empty")
+        self.cli("delete-scratch", "--path", file, "--root", "", "--expect", file_digest,
+                 cwd=owned, outcome="error", contains="empty")
+        self.assertTrue(file.is_file())
+        self.assertEqual(self.scratch_digest(scratch), directory_digest)
 
     def test_empty_expect_head_is_invalid_not_omitted(self):
         path = self.detached()
