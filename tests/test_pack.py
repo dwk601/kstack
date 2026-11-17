@@ -81,6 +81,14 @@ class SkillPackTests(unittest.TestCase):
                 mentions.add(sub)
         self.assertEqual(mentions, set(choices))
 
+    def test_verify_harness_reference(self):
+        directory = ROOT / "skills/kstack-setup"
+        reference = "references/verify-harness.md"
+        harness = directory / reference
+        self.assertTrue(harness.is_file())
+        self.assertIn("`" + reference + "`", (directory / "SKILL.md").read_text())
+        self.assertLessEqual(len(harness.read_bytes()), 720)
+
     def test_finish_and_execute_have_distinct_boundaries(self):
         execute = (ROOT / "skills/kstack-execute/SKILL.md").read_text()
         finish = (ROOT / "skills/kstack-finish/SKILL.md").read_text()
@@ -312,9 +320,16 @@ class FinishContractTests(ContractBase):
         positions = [self.cleanup.index("kstack-git " + call) for call in calls]
         self.assertEqual(positions, sorted(positions))
 
-    def test_project_deployment_fields(self):
+    def test_setup_and_readme_preserve_migration_and_recipe_contract(self):
         for field in ("name", "paths", "depends_on", "environment", "mode", "apply", "verify"):
             self.require(self.setup, "`" + field + "`")
+        self.require(self.setup, "`auto` or `manual`", "manual command", "identified merge-triggered recipe",
+                     "finish.deploy_checks", "verification evidence fallback, not an apply recipe",
+                     "helper does not validate project recipes", "kstack-finish preflight", "not guesses")
+        for text in (self.setup, self.readme):
+            self.require(text, "pr-green", "`complete`", "reinstalling never overrides",
+                         "user-owned permissions", "npx skills add ./kstack")
+        self.require(self.readme, "not live proof of GitHub merging or deployment")
 
 
 class RunArtifactContractTests(ContractBase):
@@ -360,23 +375,27 @@ class RunArtifactContractTests(ContractBase):
         self.require(self.finish, "preserve existing descriptions except direct verification results",
                      "then read back")
 
+    def test_verify_returns_outcomes_and_deletes_temporary_captures(self):
+        self.require(self.verify, "return revision-bound outcomes in chat",
+                     "shared owned scratch rules", "shared cleanup safeguards/readback",
+                     "Stop only your processes", "in stdout/chat", "Required behavior that cannot run",
+                     "wrong interaction method or inconclusive evidence is BLOCKED")
+
     def test_skill_size_budgets(self):
         sizes = {name: len(text.encode()) for name, text in self.skills.items()}
-        limits = {"kstack": 2820, "kstack-finish": 4110, "kstack-execute": 3330,
-                  "kstack-setup": 2330, "kstack-plan": 1010, "kstack-debug": 820,
-                  "kstack-review": 1570, "kstack-verify": 1340, "kstack-perf": 940,
-                  "kstack-improve": 1270, "kstack-understand": 560}
+        limits = {"kstack": 2830, "kstack-finish": 4110, "kstack-execute": 3330,
+                  "kstack-setup": 2570, "kstack-plan": 1009, "kstack-debug": 820,
+                  "kstack-review": 1570, "kstack-verify": 1390, "kstack-perf": 940,
+                  "kstack-improve": 1270, "kstack-understand": 550}
         self.assertEqual(set(limits), NAMES)
-        self.assertLessEqual(sum(sizes.values()), 19800)
+        self.assertLessEqual(sum(sizes.values()), 20100)
         for name, limit in limits.items():
             self.assertLessEqual(sizes[name], limit, name)
         # Count every Markdown reference too: moving prose cannot evade the pack budget.
         prompt_bytes = sum(len(path.read_bytes()) for path in (ROOT / "skills").rglob("*.md"))
-        self.assertLessEqual(prompt_bytes, 23022 + 1200)
+        self.assertLessEqual(prompt_bytes, 23022 + 1350)
         self.assertLessEqual(len(self.cleanup.encode()), 1540)
         self.assertLessEqual(len(self.dispatch.encode()), 1180)
-        harness = ROOT / "skills/kstack-setup/references/verify-harness.md"
-        self.assertLessEqual(len(harness.read_bytes()), 850)
 
     def test_stdlib_temporary_directory_leaves_no_owned_fixture_files(self):
         # Minimal fixture data only: demonstrate stdlib lifetime, not a shadow cleanup engine.
