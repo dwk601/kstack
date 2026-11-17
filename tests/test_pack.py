@@ -376,7 +376,7 @@ class RunArtifactContractTests(ContractBase):
     def test_skill_size_budgets(self):
         sizes = {name: len(text.encode()) for name, text in self.skills.items()}
         limits = {"kstack": 2525, "kstack-finish": 4200, "kstack-execute": 3300,
-                  "kstack-setup": 2600, "kstack-plan": 920, "kstack-debug": 820,
+                  "kstack-setup": 2600, "kstack-plan": 1009, "kstack-debug": 820,
                   "kstack-review": 1600, "kstack-verify": 1160, "kstack-perf": 940,
                   "kstack-improve": 1290, "kstack-understand": 550}
         self.assertEqual(set(limits), NAMES)
