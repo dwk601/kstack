@@ -312,8 +312,19 @@ class GitScriptTests(unittest.TestCase):
             self.local_delete(name=name, extra=extra, outcome="retained", contains="local-ref deleted")
             self.assert_absent_ref(name)
             self.assertTrue(self.branch_config(name))
-            self.local_delete(name=name, extra=extra, outcome="absent", contains="config untouched")
+            self.local_delete(name=name, extra=extra, outcome="retained", contains="config remains")
             self.assertTrue(self.branch_config(name))
+
+    def test_absent_ref_with_config_is_retained_without_cas_proof(self):
+        self.git("config", "branch.gone.remote", "origin")
+        self.git("config", "branch.gone.merge", "refs/heads/gone")
+        digest = self.config_digest("gone")
+        before = (self.repo / ".git/config").read_bytes()
+        self.local_delete(name="gone", extra=("--config-digest", digest),
+                          outcome="retained", contains="config remains")
+        self.assert_absent_ref("gone")
+        self.assertEqual((self.repo / ".git/config").read_bytes(), before)
+        self.assertEqual(self.config_digest("gone"), digest)
 
     def test_included_only_and_multi_file_branch_config_retained(self):
         for local_too in (False, True):
@@ -441,6 +452,60 @@ class GitScriptTests(unittest.TestCase):
         self.git("merge-base", "--is-ancestor", delivered, "HEAD")
         self.assertEqual((self.repo / "local.txt").read_text(), "owned local edit\n")
         self.assertEqual(self.git("status", "--porcelain").stdout, "")
+
+    def test_sync_ignored_files_survive_ff_and_owned_rebase(self):
+        original, delivered = self.prepare_sync()
+        self.git("switch", "main")
+        ignored = self.repo / "ignored/dependency"
+        ignored.parent.mkdir()
+        ignored.write_text("keep local dependency\n")
+        self.cli("sync-local", "--base", "main")
+        self.assertEqual(self.tip(), delivered)
+        self.assertEqual(ignored.read_text(), "keep local dependency\n")
+        self.git("switch", "owned-local")
+        self.git("update-ref", "refs/heads/main", self.base, delivered)
+        self.cli("sync-local", "--base", "main", "--owned-branch", "owned-local",
+                 "--owned-expect", original)
+        self.assertEqual(self.tip("main"), delivered)
+        self.assertNotEqual(self.tip(), original)
+        self.git("merge-base", "--is-ancestor", delivered, "HEAD")
+        self.assertEqual((self.repo / "local.txt").read_text(), "owned local edit\n")
+        self.assertEqual(ignored.read_text(), "keep local dependency\n")
+        self.assertIn('"status": ""', self.last_stdout)
+
+    def prepare_sync_ignored_collision(self):
+        original, _ = self.prepare_sync()
+        path = self.repo / "ignored/new.txt"
+        path.parent.mkdir()
+        path.write_text("newly tracked upstream\n")
+        self.git("add", "--force", "ignored/new.txt")
+        self.git("commit", "-m", "track formerly ignored path")
+        delivered = self.tip()
+        self.git("push", "origin", "HEAD:main")
+        self.git("switch", "main")
+        path.parent.mkdir(exist_ok=True)
+        path.write_text("unique ignored local data\n")
+        return original, delivered, path
+
+    def test_sync_ff_refuses_ignored_path_overwrite(self):
+        _, delivered, path = self.prepare_sync_ignored_collision()
+        self.cli("sync-local", "--base", "main", outcome="retained", contains="overwritten")
+        self.assertEqual(self.tip(), self.base)
+        self.assertEqual(self.tip("origin/main"), delivered)
+        self.assertEqual(path.read_text(), "unique ignored local data\n")
+        self.assertFalse((self.repo / ".git/MERGE_HEAD").exists())
+
+    def test_sync_rebase_refuses_ignored_path_overwrite(self):
+        original, delivered, path = self.prepare_sync_ignored_collision()
+        self.git("switch", "owned-local")
+        self.cli("sync-local", "--base", "main", "--owned-branch", "owned-local",
+                 "--owned-expect", original, outcome="retained", contains="overwritten")
+        self.assertEqual(self.tip(), original)
+        self.assertEqual(self.tip("main"), self.base)
+        self.assertEqual(self.tip("origin/main"), delivered)
+        self.assertEqual(path.read_text(), "unique ignored local data\n")
+        for marker in ("rebase-merge", "rebase-apply"):
+            self.assertFalse((self.repo / ".git" / marker).exists())
 
     def test_sync_conflict_preserves_commits(self):
         original, delivered = self.prepare_sync(conflict=True)
@@ -931,6 +996,19 @@ p.write_text(json.dumps(s))
         self.merge_cli(outcome="error", contains="permission")
         self.assertEqual(json.loads(self.gh_state.read_text())["calls"], [])
 
+    def test_documented_merge_recipe_with_chat_consent(self):
+        step = (ROOT / "skills/kstack-finish/SKILL.md").read_text().split("4. **Merge.**", 1)[1].split("\n", 1)[0]
+        snippets = step.split("`")[1::2]
+        recipe = next(code for code in snippets if code.startswith("kstack-git merge-pr "))
+        substitutions = {"N": "7", "<verified-head>": self.base, "<allowed-method>": "merge"}
+        command = [substitutions.get(arg, arg) for arg in shlex.split(recipe)[1:]]
+        consent_flags = [code for code in snippets if code == "--user-consented"]
+        self.fake_gh()
+        self.cli(*command, "--timeout-seconds", "2", outcome="error", contains="permission")
+        self.assertEqual(json.loads(self.gh_state.read_text())["calls"], [])
+        self.cli(*command, "--timeout-seconds", "2", *consent_flags, contains=self.base)
+        self.assertTrue(json.loads(self.gh_state.read_text())["requested"])
+
     def test_merge_user_consent_polling_and_no_delete_branch(self):
         self.fake_gh(polls=3)
         self.merge_cli("--user-consented", contains=self.base)
@@ -1010,6 +1088,60 @@ p.write_text(json.dumps(s))
         self.merge_cli("--user-consented", outcome="error", contains="merge SHA not on fetched base")
         self.fake_gh(head=unmerged)
         self.merge_cli("--user-consented", head=unmerged, outcome="error", contains="verified head not on fetched base")
+
+    def prepare_squash_delivery_with_worker(self):
+        self.git("switch", "-c", "worker")
+        tip = self.commit("worker", "reviewed worker commit\n")
+        self.git("switch", "-c", "delivery")
+        head = self.commit("integration", "frozen delivery integration\n")
+        self.git("switch", "main")
+        self.git("merge", "--squash", "delivery")
+        self.git("commit", "-m", "squashed delivery")
+        merge = self.tip()
+        self.git("push", "origin", "main")
+        self.assertEqual(self.git("merge-base", "--is-ancestor", tip, "main", check=False).returncode, 1)
+        self.git("config", "branch.worker.note", "owned worker config")
+        return tip, head, merge, self.config_digest()
+
+    def test_squash_worker_deletion_via_frozen_delivery_head(self):
+        tip, head, merge, digest = self.prepare_squash_delivery_with_worker()
+        self.fake_gh(head=head, merge=merge, initial="MERGED")
+        self.local_delete(expect=tip, extra=("--pr", "7", "--config-digest", digest),
+                          outcome="retained", contains="PR merge mapping unproven")
+        self.local_delete(expect=tip, extra=("--pr", "7", "--via-head", head,
+                                           "--config-digest", digest))
+        self.assert_absent_ref()
+        self.assertEqual(self.branch_config("worker"), ())
+        self.assertEqual(self.tip("delivery"), head)
+        self.assertEqual(self.tip("main"), merge)
+
+    def test_worker_via_head_requires_each_link_in_merge_chain(self):
+        tip, head, merge, digest = self.prepare_squash_delivery_with_worker()
+        before = self.branch_config("worker")
+        cases = ((dict(head=head, merge=merge, initial="OPEN"), head),
+                 (dict(head=head, merge=merge, initial="CLOSED"), head),
+                 (dict(head=tip, merge=merge, initial="MERGED"), head),
+                 (dict(head=head, merge=head, initial="MERGED"), head),
+                 (dict(head=self.base, merge=merge, initial="MERGED"), self.base))
+        for mapping, via in cases:
+            with self.subTest(mapping=mapping, via=via):
+                self.fake_gh(**mapping)
+                self.local_delete(expect=tip, extra=("--pr", "7", "--via-head", via,
+                                                   "--config-digest", digest), outcome="retained")
+                self.assertEqual(self.tip("worker"), tip)
+                self.assertEqual(self.branch_config("worker"), before)
+
+    def test_via_head_requires_pr_even_for_integrated_tip(self):
+        self.git("branch", "worker")
+        self.local_delete(extra=("--via-head", self.base), outcome="error", contains="requires --pr")
+        self.assertEqual(self.tip("worker"), self.base)
+
+    def test_via_head_checks_pr_even_for_integrated_tip(self):
+        self.git("branch", "worker")
+        self.fake_gh(initial="OPEN")
+        self.local_delete(extra=("--pr", "7", "--via-head", self.base),
+                          outcome="retained", contains="PR merge mapping unproven")
+        self.assertEqual(self.tip("worker"), self.base)
 
     def test_squash_mapping_allows_local_deletion_and_merge(self):
         self.git("switch", "-c", "worker")

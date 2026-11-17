@@ -237,22 +237,29 @@ def gh_view(number, fields, timeout=60):
 def delete_local_branch(args):
     branch(args.branch)
     expected = oid(args.expect)
+    via_head = oid(args.via_head) if args.via_head is not None else None
+    if via_head is not None and args.pr is None:
+        raise Failure("--via-head requires --pr")
     ref = "refs/heads/" + args.branch
     tip = ref_tip(ref)
     if tip is None:
-        return "absent", "local-ref; config untouched (no CAS proof)"
+        if config_snapshot(args.branch)[1]:
+            raise Retained("local-ref absent; config remains (no CAS proof)")
+        return "absent", "local-ref and config absent"
     if tip != expected:
         raise Retained("local tip changed")
     remote, separator, base = args.base.partition("/")
     if not separator:
         raise Failure("base must be REMOTE/BASE")
     base_ref = fetch(remote, base)
-    if not ancestor(expected, base_ref):
+    if via_head is not None or not ancestor(expected, base_ref):
         if not args.pr:
             raise Retained("unique unmerged commits")
+        if via_head is not None and not ancestor(expected, via_head):
+            raise Retained("worker tip not an ancestor of via-head")
         pr = gh_view(args.pr, "state,headRefOid,mergeCommit")
         merge = (pr.get("mergeCommit") or {}).get("oid", "")
-        if (pr.get("state") != "MERGED" or pr.get("headRefOid") != expected
+        if (pr.get("state") != "MERGED" or pr.get("headRefOid") != (via_head or expected)
                 or not merge or not ancestor(oid(merge), base_ref)):
             raise Retained("PR merge mapping unproven")
     for entry in worktrees():
@@ -559,7 +566,7 @@ def checkout_state():
     name = current.stdout.strip()
     head = oid(git("rev-parse", "HEAD").stdout.strip())
     upstream = git("for-each-ref", "--format=%(upstream)", "refs/heads/" + name).stdout.strip() if name else ""
-    status = git("status", "--porcelain", "--untracked-files=all", "--ignored").stdout
+    status = git("status", "--porcelain", "--untracked-files=all").stdout
     return name, head, upstream, status
 
 
@@ -582,10 +589,20 @@ def sync_local(args):
         if old is None or not ancestor(old, base_ref):
             raise Retained("local base missing/divergent")
         if current == args.base:
-            git("merge", "--ff-only", base_ref)
+            result = git("merge", "--ff-only", "--no-overwrite-ignore", base_ref, check=False)
+            if result.returncode:
+                raise Retained("fast-forward refused: " + result.stderr.strip())
         else:
             if any(e.get("branch") == local_ref for e in entries):
                 raise Retained("base checked out in another worktree")
+            # Rebase's initial reset overwrites ignored paths. Use Git's protected
+            # checkout, then restore the owned checkout before updating the base.
+            result = git("switch", "--detach", "--no-overwrite-ignore", base_ref, check=False)
+            if result.returncode:
+                raise Retained("rebase checkout refused: " + result.stderr.strip())
+            result = git("switch", "--no-overwrite-ignore", current, check=False)
+            if result.returncode:
+                raise Retained("owned checkout restore refused: " + result.stderr.strip())
             git("update-ref", local_ref, ref_tip(base_ref), old)
             result = git("rebase", base_ref, check=False)
             if result.returncode:
@@ -634,7 +651,7 @@ def build_parser():
         "delete-remote-branch": (delete_remote_branch, ("remote", "branch", "expect"), ()),
         "remove-worktree": (remove_worktree, ("path",), ("expect-head",)),
         "snapshot-branch-config": (snapshot_branch_config, ("branch",), ()),
-        "delete-local-branch": (delete_local_branch, ("branch", "expect", "base"), ("config-digest",)),
+        "delete-local-branch": (delete_local_branch, ("branch", "expect", "base"), ("config-digest", "via-head")),
         "merge-pr": (merge_pr, ("pr", "match-head"), ()),
         "scratch-digest": (scratch_digest, ("path",), ()),
         "delete-scratch": (delete_scratch, ("path", "expect", "root"), ()),
