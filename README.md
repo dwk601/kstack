@@ -70,7 +70,7 @@ Skills use direct steps, explicit scope/completion, real checks and shared rules
 python3 -B -m unittest discover -s tests -v
 ```
 
-Tests cover naming/subcommand links, size budgets, written safeguards, model commands and executable Git cleanup/sync scenarios with a fake `gh` merge API. Written contracts are not live speed proof. They are not live proof of GitHub merging or deployment, model quality or an end-to-end Herdr run. Git sandboxes use temporary repositories and a file:// remote without network.
+Tests cover pack structure/links, size budgets, model commands and `kstack-git` behavior in temporary repositories with a file:// remote and fake `gh` API. They do not prove live GitHub merging/deployment, model quality, performance or end-to-end Herdr behavior.
 
 ## Credits
 
