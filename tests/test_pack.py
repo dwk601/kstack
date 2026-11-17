@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 NAMES = {
     "kstack", "kstack-setup", "kstack-plan", "kstack-execute", "kstack-finish",
     "kstack-understand", "kstack-debug", "kstack-review", "kstack-verify",
-    "kstack-perf", "kstack-improve",
+    "kstack-perf", "kstack-improve", "kstack-no-comments",
 }
 
 
@@ -141,17 +141,18 @@ class SkillPackTests(unittest.TestCase):
     def test_skill_size_budgets(self):
         sizes = {name: len((ROOT / "skills" / name / "SKILL.md").read_bytes())
                  for name in NAMES}
-        limits = {"kstack": 2830, "kstack-finish": 4050, "kstack-execute": 3300,
+        limits = {"kstack": 2850, "kstack-finish": 4050, "kstack-execute": 3300,
                   "kstack-setup": 2540, "kstack-plan": 1070, "kstack-debug": 860,
                   "kstack-review": 1640, "kstack-verify": 1370, "kstack-perf": 910,
-                  "kstack-improve": 1370, "kstack-understand": 530}
+                  "kstack-improve": 1370, "kstack-understand": 530,
+                  "kstack-no-comments": 2350}
         self.assertEqual(set(limits), NAMES)
-        self.assertLessEqual(sum(sizes.values()), 21500)
+        self.assertLessEqual(sum(sizes.values()), 23900)
         for name, limit in limits.items():
             self.assertLessEqual(sizes[name], limit, name)
         # Count every Markdown reference too: moving prose cannot evade the pack budget.
         prompt_bytes = sum(len(path.read_bytes()) for path in (ROOT / "skills").rglob("*.md"))
-        self.assertLessEqual(prompt_bytes, 24500)
+        self.assertLessEqual(prompt_bytes, 26900)
         self.assertLessEqual(len((ROOT / "skills/kstack-finish/references/cleanup.md").read_bytes()), 1540)
         self.assertLessEqual(len((ROOT / "skills/kstack/references/dispatch.md").read_bytes()), 1180)
 

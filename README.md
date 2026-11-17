@@ -11,7 +11,7 @@ npx skills update -g
 npx skills list -g
 ```
 
-Install all 11 skills for sibling references. Requires Python 3; kstack-finish uses `gh` for GitHub. Reinstall local edits with `npx skills add ./kstack`. Installing never changes user config; reinstalling never overrides targets or user-owned permissions. Existing pr-green targets still stop before merge; choosing `complete` does not grant permission.
+Install all 12 skills for sibling references. Requires Python 3; kstack-finish uses `gh` for GitHub. Reinstall local edits with `npx skills add ./kstack`. Installing never changes user config; reinstalling never overrides targets or user-owned permissions. Existing pr-green targets still stop before merge; choosing `complete` does not grant permission.
 
 ## Use
 
@@ -36,6 +36,7 @@ Other agents can use exact skill names. Frontmatter and `agents/openai.yaml` dis
 | [kstack-verify](skills/kstack-verify/SKILL.md) | Exercise real behavior at known revisions |
 | [kstack-perf](skills/kstack-perf/SKILL.md) | Measure bottlenecks and gains |
 | [kstack-improve](skills/kstack-improve/SKILL.md) | Prevent recurring mistakes |
+| [kstack-no-comments](skills/kstack-no-comments/SKILL.md) | Delete unjustified comments; fix the workarounds they excuse |
 
 Diagnosis/explanation are read-only. Changes use kstack-plan → kstack-execute; shipping is a separate kstack-finish invocation.
 
