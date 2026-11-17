@@ -15,6 +15,7 @@ All skills inherit these rules; siblings: `../<skill-name>/SKILL.md`:
 | Explain | kstack-understand |
 | Diagnose / measure | kstack-debug / kstack-perf, read-only |
 | Review / prove | kstack-review / kstack-verify |
+| Strip comments | kstack-no-comments |
 | Prevent repeats / configure | kstack-improve / kstack-setup |
 
 ## Shared rules
