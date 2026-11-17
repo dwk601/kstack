@@ -99,6 +99,7 @@ class ContractBase(unittest.TestCase):
         cls.cleanup = (ROOT / "skills/kstack-finish/references/cleanup.md").read_text()
         cls.efficiency = (ROOT / "skills/kstack-finish/references/efficiency.md").read_text()
         cls.shared = cls.skills["kstack"]
+        cls.dispatch = (ROOT / "skills/kstack/references/dispatch.md").read_text()
         cls.execute = cls.skills["kstack-execute"]
         cls.setup = cls.skills["kstack-setup"]
         cls.verify = cls.skills["kstack-verify"]
@@ -111,6 +112,21 @@ class ContractBase(unittest.TestCase):
 
     def stage(self, number, title):
         return self.finish.split("%d. **%s.**" % (number, title), 1)[1].split("\n", 1)[0]
+
+
+class DispatchContractTests(ContractBase):
+    def test_dispatch_pointer_names_all_coordinators(self):
+        pointer = next((line for line in self.shared.splitlines()
+                        if "`references/dispatch.md`" in line), "")
+        self.require(pointer, "kstack-plan", "kstack-execute", "kstack-finish", "kstack-review",
+                     "coordinators read", "before starting agents")
+
+    def test_dispatch_helper_validation_and_async_prompt(self):
+        self.require(self.dispatch, "`../../kstack-setup/scripts/kstack-models`",
+                     'python3 "$MODELS" validate', "Run printed commands in assigned checkouts",
+                     "no --wait")
+        self.assertTrue((ROOT / "skills/kstack/references/../../kstack-setup/scripts/kstack-models")
+                        .is_file())
 
 
 class FinishContractTests(ContractBase):
@@ -173,6 +189,7 @@ class FinishContractTests(ContractBase):
                      "One deadline across waits/resumes/new heads", "recheck new heads, never reset deadline")
         self.require(self.efficiency, "Cap aggregate concurrency by available CPU/memory",
                      "sequence if unknown", "Concurrent stateful lanes isolate checkouts/ports/data/builds")
+        self.require(self.dispatch, "foreground agents sequentially", "no hidden background agents")
 
     def test_efficiency_never_reuses_destructive_safety_checks(self):
         self.require(self.efficiency, "Never reuse destructive-action safety checks",
@@ -342,7 +359,10 @@ class RunArtifactContractTests(ContractBase):
         for text in (*self.skills.values(), self.cleanup, self.efficiency, self.readme):
             self.assertNotRegex(text, r"(?i)(?:logs and notes are in|reports saved to|archive (?:the )?(?:logs|reports))")
 
-    def test_resume_and_direct_pr_results(self):
+    def test_stdout_collection_resume_and_direct_pr_results(self):
+        self.require(self.dispatch, "Require assignment stdout",
+                     "retry collection, not blind resends/approvals",
+                     "Missing results are verification gaps, never report files")
         self.require(self.shared, "conversation plus actual Git/PR state, not saved logs")
         self.require(self.finish, "preserve existing descriptions except direct verification results",
                      "then read back")
@@ -355,10 +375,10 @@ class RunArtifactContractTests(ContractBase):
 
     def test_skill_size_budgets(self):
         sizes = {name: len(text.encode()) for name, text in self.skills.items()}
-        limits = {"kstack": 2500, "kstack-finish": 4200, "kstack-execute": 3300,
+        limits = {"kstack": 2525, "kstack-finish": 4200, "kstack-execute": 3300,
                   "kstack-setup": 2600, "kstack-plan": 920, "kstack-debug": 820,
-                  "kstack-review": 1570, "kstack-verify": 1160, "kstack-perf": 940,
-                  "kstack-improve": 1325, "kstack-understand": 550}
+                  "kstack-review": 1600, "kstack-verify": 1160, "kstack-perf": 940,
+                  "kstack-improve": 1290, "kstack-understand": 550}
         self.assertEqual(set(limits), NAMES)
         self.assertLessEqual(sum(sizes.values()), 21500)
         for name, limit in limits.items():
@@ -367,6 +387,7 @@ class RunArtifactContractTests(ContractBase):
         prompt_bytes = sum(len(path.read_bytes()) for path in (ROOT / "skills").rglob("*.md"))
         self.assertLessEqual(prompt_bytes, 24500)
         self.assertLessEqual(len(self.cleanup.encode()), 1600)
+        self.assertLessEqual(len(self.dispatch.encode()), 1200)
 
     def test_stdlib_temporary_directory_leaves_no_owned_fixture_files(self):
         # Minimal fixture data only: demonstrate stdlib lifetime, not a shadow cleanup engine.
