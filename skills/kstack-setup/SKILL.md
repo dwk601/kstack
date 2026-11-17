@@ -17,20 +17,20 @@ Config precedence: `$KSTACK_CONFIG`, `$XDG_CONFIG_HOME/kstack/config.json`, `~/.
 - `roles`: planner, plan_critic, workers, reviewer, verifiers, fixer. One preset each; verifiers alone accepts a list, rotated across lanes, not a concurrency cap. CLIs may differ.
 - `execution.max_fails`/`finish.max_fix_rounds`: positive nonboolean integers. `allow_merge`/`allow_deploy`: JSON booleans, default false. kstack-finish defines target/timeout.
 
-1. `python3 scripts/kstack-models show`: user defaults, not project/request overrides. Missing config: use example, permissions false.
-2. Discover Pi: `pi --list-models`; Codex: `model_catalog_json` in `~/.codex/config.toml` (otherwise ask); Claude/custom: CLI/docs. Validate supported effort per model; keep model choices user-owned.
-3. Change requested settings only; preserve choices on refresh and flag only missing required settings. Show diff, write, run `python3 scripts/kstack-models validate --check`. Fix errors; warnings mean unverified availability (including Claude/custom models/flags). Changes affect new agents.
+1. `python3 scripts/kstack-models show`: user defaults, not project/request overrides. Missing config: example, permissions false.
+2. Pi: `pi --list-models`; Codex: `model_catalog_json` in `~/.codex/config.toml` (otherwise ask); Claude/custom: CLI/docs. Validate supported effort per model; keep model choices user-owned.
+3. Change requested settings only; preserve choices on refresh and flag only missing required settings. Show diff, write, run `python3 scripts/kstack-models validate --check`. Fix errors; warnings leave availability unverified, including Claude/custom models/flags. Changes affect new agents.
 
 ## Project config
 
 Optional `.kstack/project.json`: `base`, `checks`, real app-driving `verify`, `finish` overrides. See `references/verify-harness.md`.
 
 `finish.deployments` uses real scripts/CI/docs, not guesses:
-- `name`, `paths`: component and affected paths; include shared/schema/config effects.
+- `name`, `paths`: component/affected paths, including shared/schema/config effects.
 - `depends_on`, `environment`: prerequisites/destination.
-- `mode`: `auto` or `manual`; `apply`: manual command or identified merge-triggered recipe.
+- `mode`: `auto`/`manual`; `apply`: manual command or identified merge-triggered recipe.
 - `verify`: delivered revision/environment evidence.
 
-`finish.deploy_checks`: verification evidence fallback, not an apply recipe. The helper does not validate project recipes; kstack-finish preflight does, before merge.
+`finish.deploy_checks`: verification evidence fallback, not an apply recipe. Helper doesn't validate project recipes; kstack-finish preflight does before merge.
 
 pr-green/`complete` select targets; reinstalling never overrides targets or user-owned permissions. Reinstall local edits with `npx skills add ./kstack`.

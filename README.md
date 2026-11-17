@@ -74,4 +74,4 @@ Tests cover pack structure/links, size budgets, model commands and `kstack-git` 
 
 ## Credits
 
-Adapted from [pstack](https://github.com/cursor/plugins/tree/a66a8931c2dd71f1ed6abf6a52b1898a9f389ae4/pstack) by Lauren Tan (MIT). See `LICENSE`.
+Adapted from [pstack](https://github.com/cursor/plugins/tree/2f87c854fe3e2fcda44ca86b46ede35aad3c46b7/pstack) by Lauren Tan (MIT). See `LICENSE`.

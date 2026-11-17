@@ -13,6 +13,6 @@ Shared rules: read `../kstack/SKILL.md` first.
 3. Drive real interactions (EVERY mapped feature by default); check responses/side effects against acceptance. Project `verify.affected_only=true` alone permits `paths` narrowing to affected features plus one smoke feature; unknowns need all. Proof: shared owned scratch rules.
 4. Compare matching base/head workloads; if absent on base, prove head's end state, not an invented baseline.
 
-Return `base/head | PASS/FAIL/BLOCKED | commands | observations | cleanup` in stdout/chat. Required behavior that cannot run, wrong interaction method or inconclusive evidence is BLOCKED. N/A needs an inapplicability reason.
+Return `base/head | PASS/FAIL/BLOCKED | commands | observations | cleanup` in stdout/chat. Unrunnable required behavior, wrong interaction method or inconclusive evidence: BLOCKED. N/A needs an inapplicability reason.
 
-Stop only your processes; use shared cleanup safeguards/readback. Run project teardown. Offer missing recipes after standalone success; no map: offer kstack-setup harness. Swarm lanes report without config edits.
+Run project teardown; stop only your processes, with shared cleanup safeguards/readback. After standalone success offer missing recipes; no map: offer kstack-setup harness. Swarm lanes report without config edits.

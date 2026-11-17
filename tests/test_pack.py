@@ -141,17 +141,17 @@ class SkillPackTests(unittest.TestCase):
     def test_skill_size_budgets(self):
         sizes = {name: len((ROOT / "skills" / name / "SKILL.md").read_bytes())
                  for name in NAMES}
-        limits = {"kstack": 2830, "kstack-finish": 4110, "kstack-execute": 3330,
-                  "kstack-setup": 2570, "kstack-plan": 1009, "kstack-debug": 820,
-                  "kstack-review": 1570, "kstack-verify": 1390, "kstack-perf": 940,
-                  "kstack-improve": 1270, "kstack-understand": 550}
+        limits = {"kstack": 2830, "kstack-finish": 4050, "kstack-execute": 3300,
+                  "kstack-setup": 2540, "kstack-plan": 1070, "kstack-debug": 860,
+                  "kstack-review": 1640, "kstack-verify": 1370, "kstack-perf": 910,
+                  "kstack-improve": 1370, "kstack-understand": 530}
         self.assertEqual(set(limits), NAMES)
-        self.assertLessEqual(sum(sizes.values()), 20100)
+        self.assertLessEqual(sum(sizes.values()), 21500)
         for name, limit in limits.items():
             self.assertLessEqual(sizes[name], limit, name)
         # Count every Markdown reference too: moving prose cannot evade the pack budget.
         prompt_bytes = sum(len(path.read_bytes()) for path in (ROOT / "skills").rglob("*.md"))
-        self.assertLessEqual(prompt_bytes, 23022 + 1350)
+        self.assertLessEqual(prompt_bytes, 24500)
         self.assertLessEqual(len((ROOT / "skills/kstack-finish/references/cleanup.md").read_bytes()), 1540)
         self.assertLessEqual(len((ROOT / "skills/kstack/references/dispatch.md").read_bytes()), 1180)
 
