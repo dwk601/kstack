@@ -1,6 +1,6 @@
 ---
 name: kstack-debug
-description: Reproduce bugs and fix evidenced causes.
+description: Reproduce bugs; fix evidenced causes.
 disable-model-invocation: true
 ---
 
@@ -8,9 +8,9 @@ disable-model-invocation: true
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-1. Reproduce at the failing UI/CLI/API/job; name inaccessible surfaces. Diagnosis-only leaves source unchanged, including instrumentation.
-2. Test competing hypotheses with logs, probes, bisect or a debugger. Locate the first wrong decision. After two failed fixes, test the premise directly.
-3. Diagnosis-only stops at the cause. Otherwise fix the producer, using guards only for legitimate states; cover the same fault within scope and revert disproved experiments.
-4. Rerun the original reproduction; focused regressions should fail before and pass after.
+1. Reproduce failing UI/CLI/API/job; name inaccessible surfaces. Diagnosis-only: no source edits, even instrumentation.
+2. Test rival hypotheses via logs/probes/bisect/debugger; find the first wrong decision. Two failed fixes: test the premise directly. Deep-dig deciding fact: propose a cheap always-on signal.
+3. Diagnosis-only: stop at cause. Else fix the producer; guards/retries/swallowed errors/clamped values/discarded state hide bugs unless states are legitimate. Cover same fault within scope; revert disproved experiments.
+4. Rerun original repro; focused regressions must fail before/pass after.
 
 Report symptom, cause evidence and before/after results.

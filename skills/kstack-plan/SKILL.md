@@ -1,6 +1,6 @@
 ---
 name: kstack-plan
-description: Build a code-grounded plan with an independent critic.
+description: Plan from code with an independent critic.
 disable-model-invocation: true
 ---
 
@@ -8,8 +8,8 @@ disable-model-invocation: true
 
 Shared rules: read `../kstack/SKILL.md` first.
 
-1. State request and exclusions. Configured `planner` traces affected code/data/state and available checks; use `../kstack-understand/SKILL.md` where unfamiliar.
-2. Define tasks with goal, owned files, dependencies, observable acceptance and check command. Keep coupled work together; parallel ownership is disjoint. Include live scenarios/pass conditions and performance targets. One task is fine.
-3. Fresh `plan_critic` checks once using `../kstack-review/SKILL.md` plan mode. Planner revises once; resolve facts with code, asking only unresolved product choices.
+1. State request/exclusions. Configured `planner` traces affected code/data/state and available checks; use `../kstack-understand/SKILL.md` where unfamiliar.
+2. Tasks: goal/owned files/dependencies/observable acceptance/check command. Keep coupled work together; disjoint parallel ownership. Include live scenarios/pass conditions and performance targets; one task is fine. Flag state machines/concurrency/retries/math, each with a property to check. Name non-agent proof.
+3. Prototype choices experiments can settle; recommend from observations. Fresh `plan_critic` checks once via `../kstack-review/SKILL.md` plan mode; planner revises once. Resolve facts with code; ask users only product/preference choices no experiment settles.
 
-Return the plan in chat; close only agents opened here. Coordinator may plan when its model matches `planner`, never act as its own critic.
+Return chat plan; close only agents opened here. Coordinator may plan when its model matches `planner`, never be its own critic.

@@ -41,7 +41,7 @@ Diagnosis/explanation are read-only. Changes use kstack-plan → kstack-execute;
 
 ## Configuration and safety
 
-See [kstack-setup](skills/kstack-setup/SKILL.md) and its [config example](skills/kstack-setup/references/config.example.json). Built-in CLIs: Pi, Codex, Claude Code; custom presets supply argv templates. Model choices and permissions remain user-owned.
+See [kstack-setup](skills/kstack-setup/SKILL.md) and its [config example](skills/kstack-setup/references/config.example.json). Built-in CLIs: Pi, Codex, Claude Code; custom presets supply argv templates. Model choices and permissions remain user-owned. Map features with the [verification harness](skills/kstack-setup/references/verify-harness.md).
 
 ```sh
 python3 skills/kstack-setup/scripts/kstack-models show
@@ -50,7 +50,7 @@ python3 skills/kstack-setup/scripts/kstack-models validate --check
 
 kstack-finish defaults to `complete`: verified merge, postmerge gates and delivery of every affected app. Permissions, real recipes and evidence are required; missing requirements block. `finish.deploy_checks` verifies delivery but is not an apply recipe.
 
-Results/inventory stay in chat/stdout, not saved run artifacts. Every settled return cleans safe owned temporary resources. Source cleanup waits for merge and target gates; unmerged/unrelated/uncertain work is preserved. [Cleanup safeguards](skills/kstack-finish/references/cleanup.md) cover ownership, leases, worktrees, files, config and local sync. Partial cleanup is not overall completion.
+Results/inventory stay in chat/stdout, not saved run artifacts. Every settled return cleans safe owned temporary resources. Source cleanup waits for merge and target gates; unmerged/unrelated/uncertain work is preserved. [Cleanup safeguards](skills/kstack-finish/references/cleanup.md) pair ownership judgment with the tested, stateless `kstack-git` script for Git, scratch and sync mechanics. Partial cleanup is not overall completion.
 
 ## Optional CI efficiency work
 
@@ -70,8 +70,8 @@ Skills use direct steps, explicit scope/completion, real checks and shared rules
 python3 -B -m unittest discover -s tests -v
 ```
 
-Tests cover naming/links, size budgets (including references), written safeguards, model commands and isolated Git semantics. Written contracts are not live speed proof. They are not live proof of GitHub merging or deployment, model quality or an end-to-end Herdr run. Git sandboxes use temporary repositories and a file:// remote without network.
+Tests cover pack structure/links, size budgets, model commands and `kstack-git` behavior in temporary repositories with a file:// remote and fake `gh` API. They do not prove live GitHub merging/deployment, model quality, performance or end-to-end Herdr behavior.
 
 ## Credits
 
-Adapted from [pstack](https://github.com/cursor/plugins/tree/a66a8931c2dd71f1ed6abf6a52b1898a9f389ae4/pstack) by Lauren Tan (MIT). See `LICENSE`.
+Adapted from [pstack](https://github.com/cursor/plugins/tree/2f87c854fe3e2fcda44ca86b46ede35aad3c46b7/pstack) by Lauren Tan (MIT). See `LICENSE`.
