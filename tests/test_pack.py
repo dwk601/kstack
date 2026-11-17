@@ -287,7 +287,10 @@ class FinishContractTests(ContractBase):
     def test_script_calls_and_local_sync_order(self):
         self.require(self.stage(6, "Clean and sync"), "Follow `references/cleanup.md`")
         self.require(self.cleanup, "digest in chat", "Only done/absent counts as cleaned", "Quiesce writers",
-                     "retained/error is partial", "inventory proofs, never a newly observed tip")
+                     "retained/error is partial", "inventory proofs, never a newly observed tip",
+                     "Canonicalize paths with realpath",
+                     "Record `kstack-git scratch-digest` at creation",
+                     "`kstack-git delete-scratch --expect DIGEST` uses that inventory digest")
         calls = ["scratch-digest", "delete-scratch", "delete-remote-branch", "remove-worktree",
                  "delete-local-branch", "sync-local"]
         positions = [self.cleanup.index("kstack-git " + call) for call in calls]

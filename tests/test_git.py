@@ -29,7 +29,8 @@ class GitScriptTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(
             prefix="kstack-git-", dir=os.environ.get("TMPDIR") or None)
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name).resolve()
+        self.raw_root = Path(self.temp.name)
+        self.root = self.raw_root.resolve()
         self.repo = self.root / "repo"
         self.remote = self.root / "remote.git"
         self.repo.mkdir()
@@ -79,9 +80,9 @@ class GitScriptTests(unittest.TestCase):
     def tip(self, ref="HEAD", cwd=None):
         return self.git("rev-parse", ref, cwd=cwd).stdout.strip()
 
-    def cli(self, cmd, *args, outcome="done", contains=None):
+    def cli(self, cmd, *args, outcome="done", contains=None, cwd=None):
         result = subprocess.run([sys.executable, "-B", str(SCRIPT), cmd, *map(str, args)],
-                                cwd=self.repo, env=self.env, capture_output=True,
+                                cwd=cwd or self.repo, env=self.env, capture_output=True,
                                 text=True, timeout=20)
         self.assertEqual(result.returncode, {"done": 0, "absent": 0, "retained": 3, "error": 2}[outcome],
                          result.stdout + result.stderr)
@@ -91,6 +92,26 @@ class GitScriptTests(unittest.TestCase):
         if contains:
             self.assertIn(contains, line)
         return line.split(" ", 3)[3]
+
+    @contextlib.contextmanager
+    def sandbox(self, cwd=None):
+        previous = Path.cwd()
+        with mock.patch.dict(os.environ, self.env, clear=True):
+            os.chdir(cwd or self.repo)
+            try:
+                yield
+            finally:
+                os.chdir(previous)
+
+    def in_process(self, *args, outcome="done", contains=None):
+        with self.sandbox(), contextlib.redirect_stdout(io.StringIO()) as out:
+            result = kg.main(list(map(str, args)))
+        self.assertEqual(result, {"done": 0, "absent": 0, "retained": 3, "error": 2}[outcome], out.getvalue())
+        line = out.getvalue().splitlines()[-1]
+        self.assertTrue(line.startswith("kstack-git " + args[0] + " " + outcome + " "), line)
+        if contains:
+            self.assertIn(contains, line)
+        return out.getvalue()
 
     def local_delete(self, name="worker", expect=None, outcome="done", extra=(), contains=None):
         return self.cli("delete-local-branch", "--branch", name, "--expect", expect or self.base,
@@ -208,10 +229,10 @@ class GitScriptTests(unittest.TestCase):
         path = self.root / "locked"
         self.git("worktree", "add", "-b", "worker", str(path), self.base)
         self.git("worktree", "lock", "--reason", "active", str(path))
-        self.cli("remove-worktree", "--path", path, outcome="retained", contains="locked")
+        self.assertEqual(self.cli("remove-worktree", "--path", path, outcome="retained"), "locked worktree")
         self.local_delete(outcome="retained", contains="associated")
         self.assertEqual(self.tip("worker"), self.base)
-        self.cli("remove-worktree", "--path", self.repo, outcome="retained", contains="main")
+        self.assertEqual(self.cli("remove-worktree", "--path", self.repo, outcome="retained"), "main worktree")
 
     def test_paused_interactive_rebase_in_other_worktree(self):
         path = self.root / "rebasing"
@@ -232,7 +253,10 @@ class GitScriptTests(unittest.TestCase):
 
     def test_main_worktree_markers_and_symlink_markers(self):
         self.git("branch", "worker")
-        for marker in kg.MARKERS:
+        # Deliberately independent of the implementation: deleting ANY marker
+        # from kg.MARKERS must remove a real protection and fail this test.
+        for marker in ("rebase-merge", "rebase-apply", "BISECT_START", "MERGE_HEAD",
+                       "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer"):
             file = self.repo / ".git" / marker
             file.symlink_to(self.root / "nonexistent")
             self.local_delete(outcome="retained", contains="operation marker")
@@ -279,6 +303,85 @@ class GitScriptTests(unittest.TestCase):
             self.assertTrue(self.branch_config(name))
             self.local_delete(name=name, extra=extra, outcome="absent", contains="config untouched")
             self.assertTrue(self.branch_config(name))
+
+    def test_included_only_and_multi_file_branch_config_retained(self):
+        for local_too in (False, True):
+            name = "worker-multiple" if local_too else "worker-included"
+            self.git("branch", name)
+            if local_too:
+                self.git("config", "branch." + name + ".note", "local entry")
+            included = self.root / (name + ".config")
+            content = '[branch "' + name + '"]\n note = included entry\n'
+            included.write_text(content)
+            self.git("config", "--add", "include.path", str(included))
+            digest = self.config_digest(name)
+            self.assertNotEqual(digest, self.config_digest("absent-section"))
+            local_before = self.branch_config(name)
+            self.local_delete(name=name, extra=("--config-digest", digest), outcome="retained",
+                              contains="not in one local file" if local_too else "included config")
+            self.assert_absent_ref(name)
+            self.assertEqual(included.read_text(), content)
+            self.assertEqual(self.branch_config(name), local_before)
+            self.assertIn("included entry", self.git("config", "--includes", "--get-all",
+                                                    "branch." + name + ".note").stdout.splitlines())
+
+    def test_global_only_branch_config_cannot_be_removed(self):
+        self.git("branch", "worker")
+        config = self.root / "global-only.config"
+        original = '[branch "worker"]\n note = user owned\n'
+        config.write_text(original)
+        self.env["GIT_CONFIG_GLOBAL"] = str(config)
+        self.assertEqual(self.branch_config("worker"), ())
+        digest = self.config_digest()
+        self.local_delete(extra=("--config-digest", digest), outcome="retained",
+                          contains="not in one local file")
+        self.assert_absent_ref()
+        self.assertEqual(config.read_text(), original)
+
+    def test_config_digest_covers_scope_origin_and_file(self):
+        first, second = self.root / "first.config", self.root / "second.config"
+        for config in (first, second):
+            config.write_text('[branch "worker"]\n note = same value\n')
+        self.env["GIT_CONFIG_GLOBAL"] = str(first)
+        global_first = self.config_digest()
+        self.env["GIT_CONFIG_GLOBAL"] = str(second)
+        global_second = self.config_digest()
+        self.assertNotEqual(global_first, global_second, "origin/file must enter digest")
+        self.env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=str(first), GIT_CONFIG_NOSYSTEM="0")
+        system_first = self.config_digest()
+        self.assertNotEqual(global_first, system_first, "scope must enter digest even for the SAME file")
+
+    def test_config_snapshot_and_deletion_from_deep_subdirectory(self):
+        self.git("branch", "worker")
+        self.git("config", "branch.worker.note", "owned")
+        digest = self.config_digest()
+        sub = self.repo / "sub/deep"
+        sub.mkdir(parents=True)
+        self.assertEqual(self.cli("snapshot-branch-config", "--branch", "worker", cwd=sub), digest)
+        self.cli("delete-local-branch", "--branch", "worker", "--expect", self.base,
+                 "--base", "origin/main", "--config-digest", digest, cwd=sub)
+        self.assert_absent_ref()
+        self.assertEqual(self.branch_config("worker"), ())
+
+    def test_post_cas_ref_readback_precedes_config_deletion(self):
+        self.git("branch", "worker")
+        self.git("config", "branch.worker.note", "retain until absence proven")
+        digest = self.config_digest()
+        before = self.branch_config("worker")
+        self.git_wrapper("if sys.argv[1:3] == ['update-ref', '-d']:\n    sys.exit(0)\n")
+        self.local_delete(extra=("--config-digest", digest), outcome="retained", contains="ref remains")
+        self.assertEqual(self.tip("worker"), self.base)
+        self.assertEqual(self.branch_config("worker"), before)
+
+    def test_post_config_deletion_section_readback(self):
+        self.git("branch", "worker")
+        self.git("config", "branch.worker.note", "still here")
+        digest = self.config_digest()
+        before = self.branch_config("worker")
+        self.git_wrapper("if '--remove-section' in sys.argv:\n    sys.exit(0)\n")
+        self.local_delete(extra=("--config-digest", digest), outcome="retained", contains="section remains")
+        self.assert_absent_ref()
+        self.assertEqual(self.branch_config("worker"), before)
 
     def test_absent_config_idempotent(self):
         self.git("branch", "worker")
@@ -340,6 +443,18 @@ class GitScriptTests(unittest.TestCase):
         self.assertEqual(self.tip("owned-local"), original)
         self.assertEqual(self.tip("origin/main"), delivered)
 
+    def test_detached_checkout_cannot_be_owned_by_empty_branch(self):
+        original, delivered = self.prepare_sync()
+        self.git("switch", "--detach", original)
+        for options in (("--owned-branch", "", "--owned-expect", original),
+                        ("--owned-branch", "owned-local", "--owned-expect", original),
+                        ("--owned-branch", "", "--owned-expect", "")):
+            self.cli("sync-local", "--base", "main", *options,
+                     outcome="retained", contains="unowned or detached")
+            self.assertEqual(self.tip(), original)
+            self.assertEqual(self.tip("main"), self.base)
+            self.assertEqual(self.tip("origin/main"), delivered)
+
     def test_sync_base_associated_elsewhere_and_operation_markers(self):
         self.git("worktree", "add", "-b", "owned-local", str(self.root / "other"), self.base)
         self.git("switch", "--detach")
@@ -379,6 +494,55 @@ class GitScriptTests(unittest.TestCase):
                  "--root", self.repo, outcome="retained", contains="tracked")
         self.assertTrue(product.exists())
 
+    def test_literal_pathspec_magic_filename_is_untracked(self):
+        artifact = self.repo / ":(top)product.md"
+        artifact.write_text("ephemeral, not the tracked product.md")
+        digest = self.scratch_digest(artifact)
+        self.cli("delete-scratch", "--path", artifact, "--root", self.repo, "--expect", digest)
+        self.assertFalse(artifact.exists())
+        self.assertTrue((self.repo / "product.md").exists())
+
+    def test_empty_tracked_gitlink_directory_is_not_scratch(self):
+        sub = self.repo / "submodule"
+        sub.mkdir()
+        self.git("update-index", "--add", "--cacheinfo", "160000," + self.base + ",submodule")
+        self.git("commit", "-m", "fixture gitlink")
+        before = self.git("status", "--porcelain").stdout
+        self.cli("delete-scratch", "--path", sub, "--root", self.repo,
+                 "--expect", self.scratch_digest(sub), outcome="retained", contains="tracked")
+        self.assertTrue(sub.is_dir())
+        self.assertEqual(self.git("status", "--porcelain").stdout, before)
+
+    def test_corrupt_index_cannot_authorize_tracked_scratch_deletion(self):
+        product = self.repo / "product.md"
+        before = product.read_bytes()
+        digest = self.scratch_digest(product)
+        (self.repo / ".git/index").write_bytes(b"corrupt index")
+        self.cli("delete-scratch", "--path", product, "--root", self.repo, "--expect", digest,
+                 outcome="error", contains="cannot prove untracked")
+        self.assertEqual(product.read_bytes(), before)
+        with self.sandbox(), self.assertRaisesRegex(kg.Failure, "git:"):
+            kg.clean()
+
+    def test_corrupt_head_is_not_outside_a_repository(self):
+        product = self.repo / "product.md"
+        before = product.read_bytes()
+        digest = self.scratch_digest(product)
+        (self.repo / ".git/HEAD").write_text("garbage HEAD\n")
+        self.cli("delete-scratch", "--path", product, "--root", self.repo, "--expect", digest,
+                 outcome="error", contains="cannot inspect scratch repository")
+        self.assertEqual(product.read_bytes(), before)
+        with self.sandbox(), self.assertRaisesRegex(kg.Failure, "git:"):
+            kg.worktrees()
+        with self.sandbox(), self.assertRaisesRegex(kg.Failure, "git:"):
+            kg.ref_tip("refs/heads/main")
+
+    def test_corrupt_ref_warning_is_not_absence(self):
+        self.git("branch", "worker")
+        (self.repo / ".git/refs/heads/worker").write_text("not an object id\n")
+        self.local_delete(outcome="error", contains="uninspectable refs")
+        self.assertTrue((self.repo / ".git/refs/heads/worker").exists())
+
     def test_scratch_directory_tracked_member_and_git_errors(self):
         directory = self.repo / "owned"
         directory.mkdir()
@@ -416,14 +580,17 @@ class GitScriptTests(unittest.TestCase):
         link.symlink_to(scratch, target_is_directory=True)
         for path in (link, link / "fixture", scratch / "../link/fixture", link / "../scratch"):
             self.cli("delete-scratch", "--path", path, "--root", owned, "--expect", digest,
-                     outcome="retained", contains="symlink")
-            self.cli("scratch-digest", "--path", path, outcome="retained", contains="symlink")
+                     outcome="retained")
+        self.cli("scratch-digest", "--path", link, outcome="retained", contains="symlink")
+        # Digest has no owned-root argument: canonical ancestor aliases are OK,
+        # but deletion above never follows a symlink beneath its owned root.
+        self.assertEqual(self.scratch_digest(link / "fixture"), self.scratch_digest(file))
         (scratch / "sym").symlink_to(file)
         self.cli("scratch-digest", "--path", scratch, outcome="retained", contains="symlink")
         (scratch / "sym").unlink()
         for path in (owned, self.repo / "product.md", owned / "../repo/product.md"):
             self.cli("delete-scratch", "--path", path, "--root", owned, "--expect", digest,
-                     outcome="retained", contains="contained")
+                     outcome="retained")
         self.cli("delete-scratch", "--path", scratch, "--root", owned, "--expect", digest)
         self.cli("delete-scratch", "--path", scratch, "--root", owned, "--expect", digest, outcome="absent")
         self.assertFalse(scratch.exists())
@@ -439,6 +606,132 @@ class GitScriptTests(unittest.TestCase):
                  outcome="retained", contains="changed before unlink")
         self.assertEqual(artifact.read_text(), "raced")
 
+    def test_scratch_ancestor_swap_after_last_snapshot_cannot_escape(self):
+        owned = self.root / "owned"
+        scratch = owned / "scratch"
+        scratch.mkdir(parents=True)
+        (scratch / "fixture").write_text("owned")
+        victim = self.root / "victim"
+        victim.mkdir()
+        (victim / "fixture").write_text("unrelated user data")
+        digest = self.scratch_digest(scratch)
+        snapshot = kg.scratch_snapshot
+        calls = []
+
+        def swapped(*args, **kwargs):
+            result = snapshot(*args, **kwargs)
+            calls.append(1)
+            if len(calls) == 2:
+                scratch.rename(owned / "moved")
+                scratch.symlink_to(victim, target_is_directory=True)
+            return result
+
+        with mock.patch.object(kg, "scratch_snapshot", side_effect=swapped):
+            self.in_process("delete-scratch", "--path", scratch, "--root", owned,
+                            "--expect", digest, outcome="retained", contains="changed before unlink")
+        self.assertEqual((victim / "fixture").read_text(), "unrelated user data")
+        self.assertEqual((owned / "moved/fixture").read_text(), "owned")
+
+    def test_scratch_swap_during_unlink_uses_pinned_directory_fd(self):
+        owned = self.root / "owned"
+        scratch = owned / "scratch"
+        scratch.mkdir(parents=True)
+        (scratch / "fixture").write_text("owned")
+        victim = self.root / "victim"
+        victim.mkdir()
+        (victim / "fixture").write_text("unrelated user data")
+        digest = self.scratch_digest(scratch)
+        unlink = os.unlink
+        calls = []
+
+        def swapped(path, *args, **kwargs):
+            if not calls:
+                calls.append(1)
+                scratch.rename(owned / "moved")
+                scratch.symlink_to(victim, target_is_directory=True)
+            return unlink(path, *args, **kwargs)
+
+        with mock.patch.object(kg.os, "unlink", side_effect=swapped):
+            self.in_process("delete-scratch", "--path", scratch, "--root", owned,
+                            "--expect", digest, outcome="retained", contains="changed before unlink")
+        self.assertEqual((victim / "fixture").read_text(), "unrelated user data")
+        self.assertFalse((owned / "moved/fixture").exists())
+
+    def test_nested_scratch_fd_traversal(self):
+        owned = self.root / "owned"
+        scratch = owned / "nested/scratch"
+        for relative in ("a/a/file", "a/b/file", "b/a/file", "scratch/fixture"):
+            path = scratch / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(relative)
+        digest = self.scratch_digest(scratch)
+        self.cli("delete-scratch", "--path", scratch, "--root", owned, "--expect", digest)
+        self.assertFalse(scratch.exists())
+        self.assertTrue((owned / "nested").is_dir())
+
+    def path_aliases(self):
+        alias = self.root / "alias"
+        alias.symlink_to(self.root, target_is_directory=True)
+        paths = [alias, self.raw_root]
+        if (sys.platform == "darwin" and Path("/var").is_symlink()
+                and Path("/private/var") in self.root.parents):
+            paths.append(Path("/var") / self.root.relative_to("/private/var"))
+        return paths
+
+    def test_canonical_worktree_aliases_include_macos_var_tmpdir(self):
+        aliases = self.path_aliases()
+        for index, alias in enumerate(aliases):
+            name = "missing-" + str(index)
+            path = self.root / name
+            self.git("worktree", "add", "--detach", str(alias / name), self.base)
+            shutil.rmtree(path)
+            self.cli("remove-worktree", "--path", alias / name, outcome="retained", contains="metadata")
+            self.assertIn(str(path), self.git("worktree", "list", "--porcelain").stdout)
+        existing = self.detached("existing")
+        self.cli("remove-worktree", "--path", aliases[0] / existing.name)
+        self.assertFalse(existing.exists())
+        self.cli("remove-worktree", "--path", aliases[0] / "repo", outcome="retained", contains="main worktree")
+
+    def test_canonical_scratch_aliases_include_macos_var_tmpdir(self):
+        for index, alias in enumerate(self.path_aliases()):
+            name = "owned-" + str(index)
+            owned = self.root / name
+            owned.mkdir()
+            scratch = owned / "scratch"
+            scratch.write_text("ephemeral")
+            digest = self.scratch_digest(scratch)
+            self.assertEqual(self.scratch_digest(alias / name / "scratch"), digest)
+            self.cli("delete-scratch", "--path", alias / name / "scratch", "--root", alias / name,
+                     "--expect", digest)
+            self.assertFalse(scratch.exists())
+
+    def test_inaccessible_parent_is_error_not_absence(self):
+        parent = self.root / "inaccessible"
+        parent.mkdir()
+        path = parent / "existing"
+        path.mkdir()
+        parent.chmod(0)
+        try:
+            try:
+                path.lstat()
+            except PermissionError:
+                pass
+            else:
+                self.skipTest("test requires an unprivileged uid enforcing EACCES")
+            self.cli("remove-worktree", "--path", path, outcome="error")
+            self.cli("delete-scratch", "--path", path, "--root", self.root,
+                     "--expect", "not-an-absence-proof", outcome="error")
+        finally:
+            parent.chmod(0o700)
+        self.assertTrue(path.is_dir())
+
+    def test_empty_expect_head_is_invalid_not_omitted(self):
+        path = self.detached()
+        tip = self.commit("extra", "unique worktree commit", cwd=path)
+        self.cli("remove-worktree", "--path", path, "--expect-head", "", outcome="error", contains="invalid SHA")
+        self.assertTrue(path.is_dir())
+        self.assertEqual(self.tip(cwd=path), tip)
+
     def test_missing_worktree_metadata_is_retained(self):
         path = self.detached("missing")
         shutil.rmtree(path)
@@ -453,10 +746,13 @@ class GitScriptTests(unittest.TestCase):
         self.cli("remove-worktree", "--path", self.root, outcome="retained", contains="not a registered")
         self.assertTrue(path.exists())
 
-    def fake_gh(self, head=None, merge=None, polls=1, initial="OPEN"):
+    def fake_gh(self, head=None, merge=None, polls=1, initial="OPEN",
+                poll_head=None, poll_base=None, poll_state=None):
         self.gh_state = self.root / "gh-state.json"
         self.gh_state.write_text(json.dumps(dict(head=head or self.base, merge=merge or self.base,
-                                                 polls=polls, state=initial, calls=[], requested=False)))
+                                                 polls=polls, state=initial, calls=[], requested=False,
+                                                 base="main", poll_head=poll_head,
+                                                 poll_base=poll_base, poll_state=poll_state)))
         self.env["FAKE_GH_STATE"] = str(self.gh_state)
         executable = self.bin / "gh"
         executable.write_text("#!" + sys.executable + "\n" + '''import json, os, pathlib, sys
@@ -472,8 +768,11 @@ else:
         s['polls'] -= 1
         if s['polls'] <= 0:
             s['state'] = 'MERGED'
+        for field in ('head', 'base', 'state'):
+            if s['poll_' + field] is not None:
+                s[field] = s['poll_' + field]
     print(json.dumps(dict(state=s['state'], headRefOid=s['head'],
-                         mergeCommit={'oid': s['merge']}, baseRefName='main')))
+                         mergeCommit={'oid': s['merge']}, baseRefName=s['base'])))
 p.write_text(json.dumps(s))
 ''')
         executable.chmod(0o755)
@@ -486,6 +785,8 @@ p.write_text(json.dumps(s))
     def test_merge_permission_refused_even_with_repo_config(self):
         self.fake_gh()
         (self.repo / "config.json").write_text('{"finish":{"allow_merge":true}}')
+        (self.repo / ".kstack").mkdir()
+        (self.repo / ".kstack/project.json").write_text('{"finish":{"allow_merge":true}}')
         self.git("config", "finish.allow-merge", "true")
         self.merge_cli(outcome="error", contains="permission")
         self.assertEqual(json.loads(self.gh_state.read_text())["calls"], [])
@@ -523,6 +824,46 @@ p.write_text(json.dumps(s))
         self.fake_gh(head=other)
         self.merge_cli("--user-consented", outcome="error", contains="matched head")
         self.assertFalse(json.loads(self.gh_state.read_text())["requested"])
+
+    def test_merge_rejects_merged_and_closed_start_states(self):
+        for state in ("MERGED", "CLOSED"):
+            with self.subTest(state=state):
+                self.fake_gh(initial=state)
+                self.merge_cli("--user-consented", outcome="error", contains="not OPEN")
+                api = json.loads(self.gh_state.read_text())
+                self.assertFalse(api["requested"])
+                self.assertEqual(len(api["calls"]), 1)
+
+    def test_merge_rejects_head_and_base_changes_during_poll(self):
+        changed = self.commit("changed-head", "not the verified PR head")
+        for change in (dict(poll_head=changed), dict(poll_base="other-base")):
+            with self.subTest(change=change):
+                self.fake_gh(**change)
+                self.merge_cli("--user-consented", outcome="error", contains="head/base changed")
+                self.assertTrue(json.loads(self.gh_state.read_text())["requested"])
+
+    def test_merge_closed_during_poll_is_not_a_timeout(self):
+        self.fake_gh(poll_state="CLOSED")
+        self.merge_cli("--user-consented", outcome="error", contains="closed without merge")
+        self.assertEqual(len(json.loads(self.gh_state.read_text())["calls"]), 3)
+
+    def test_negative_pr_merge_mappings_retain_unique_branch(self):
+        self.git("switch", "-c", "worker")
+        tip = self.commit("unique", "unmerged worker change")
+        self.git("switch", "main")
+        self.git("config", "branch.worker.note", "preserve with branch")
+        before = self.branch_config("worker")
+        cases = (dict(head=tip, merge=self.base, initial="OPEN"),
+                 dict(head=tip, merge=self.base, initial="CLOSED"),
+                 dict(head=self.base, merge=self.base, initial="MERGED"),
+                 dict(head=tip, merge=tip, initial="MERGED"))
+        for mapping in cases:
+            with self.subTest(mapping=mapping):
+                self.fake_gh(**mapping)
+                self.local_delete(expect=tip, extra=("--pr", "7", "--config-digest", self.config_digest()),
+                                  outcome="retained", contains="PR merge mapping unproven")
+                self.assertEqual(self.tip("worker"), tip)
+                self.assertEqual(self.branch_config("worker"), before)
 
     def test_merge_timeout_and_ancestry_failure(self):
         self.fake_gh(polls=100)

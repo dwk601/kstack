@@ -10,13 +10,13 @@ Source deletion waits for confirmed merge and all target gates. Never delete bas
 
 ## Calls
 
-Use `scripts/kstack-git` from finish; other skills use `../kstack-finish/scripts/kstack-git`. Use `--help` for arguments. At creation record `kstack-git snapshot-branch-config` digest in chat.
+Run `scripts/kstack-git` (other skills: `../kstack-finish/scripts/kstack-git`; `--help`). At creation record `kstack-git snapshot-branch-config` digest in chat.
 
-Quiesce writers; use inventory proofs, never a newly observed tip:
-1. `kstack-git scratch-digest`, then `kstack-git delete-scratch` for exact owned scratch on every return.
-2. `kstack-git delete-remote-branch` after source gates.
+Canonicalize paths with realpath. Quiesce writers; use inventory proofs, never a newly observed tip:
+1. Record `kstack-git scratch-digest` at creation; `kstack-git delete-scratch --expect DIGEST` uses that inventory digest on every return.
+2. `kstack-git delete-remote-branch`.
 3. `kstack-git remove-worktree` for disposable worktrees.
 4. `kstack-git delete-local-branch` with recorded config digest.
 5. `kstack-git sync-local` last.
 
-Only done/absent counts as cleaned. Report delivery, cleanup and sync separately; retained/error is partial.
+Only done/absent counts as cleaned. Report delivery/cleanup/sync separately; retained/error is partial.
